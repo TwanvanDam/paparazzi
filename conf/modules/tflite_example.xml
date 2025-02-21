@@ -1,0 +1,28 @@
+<!DOCTYPE module SYSTEM "module.dtd">
+<module name="tflite_example" dir="tflite_example">
+  <doc>
+    <description>
+      This module demonstrates how to use TensorFlow Lite in Paparazzi. It loads a TFLite model,
+      runs basic inference, and prints the result. Adjust TFLITE_MODEL_PATH to point to your model file.
+    </description>
+    <!-- use this define to set the model path from the airframe file -->
+    <define name="TFLITE_MODEL_PATH" value="/path/to/model.tflite" description="Path to the TFLite model"/>
+  </doc>
+  <header>
+    <file name="tflite_example.h"/>
+  </header>
+  <!-- Call the initialization function at startup -->
+  <init fun="tflite_example_init()"/>
+  <makefile target="ap">
+    <file name="tflite_example.cpp"/>
+    <!-- Specify include and library paths for TFLite for the AP (drone) build -->
+    <flag name="CXXFLAGS" value="-I$(PAPARAZZI_SRC)/sw/ext/tflite/include"/>
+    <flag name="LDFLAGS" value="-L$(PAPARAZZI_HOME)/sw/ext/tflite/lib -ltensorflow-lite"/>
+  </makefile>
+  <makefile target="nps">
+    <file name="tflite_example.cpp"/>
+    <!-- Specify include and library paths for TFLite for the NPS (simulator) build -->
+    <flag name="CXXFLAGS" value="-I$(PAPARAZZI_SRC)/sw/ext/tflite/include"/>
+    <flag name="LDFLAGS" value="-L$(PAPARAZZI_HOME)/sw/ext/tflite/lib -ltensorflow-lite"/>
+  </makefile>
+</module>
