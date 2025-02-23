@@ -12,7 +12,9 @@
         "Makefile.*": "makefile",
         "*.expression": "c",
         "alignedvector3": "c",
-        "fft": "c"
+        "fft": "c",
+        "image_processor.h": "c",
+        "any": "c"
     },
     "C_Cpp.dimInactiveRegions": false,
     "esbonio.sphinx.confDir": "",

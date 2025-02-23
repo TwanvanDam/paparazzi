@@ -1,12 +1,12 @@
-#include "depth_estimation.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
+#include "depth_estimation.h"
 #include "inference.h"
+#include "image_processor.h"
 #include "modules/computer_vision/cv.h"
 #include "modules/computer_vision/lib/vision/image.h"
 
-// Define camera device
 #ifndef DEPTH_ESTIMATION_CAMERA
 #define DEPTH_ESTIMATION_CAMERA "front_camera"
 #endif
@@ -23,100 +23,99 @@ static struct video_listener* listener = NULL;
 static pthread_mutex_t mutex;
 static struct depth_data_t shared_data = {0, 0, false};
 static ModelContext* model_ctx = NULL;
-static int input_width = 0;
-static int input_height = 0;
-static float* test_image = NULL;
+static struct image_t* current_frame = NULL;
+static struct image_t current_frame_copy = {.buf=NULL};
+static struct image_t processed_img = {.buf=NULL};
 
 // Video callback function (runs in video thread)
-static struct image_t* depth_estimation_callback(struct image_t* img) {
-    // Store frame info in shared data structure
+static struct image_t* depth_estimation_callback(struct image_t* img, uint8_t camera_id) {
     pthread_mutex_lock(&mutex);
+    
+    // Make a proper copy of the image
+    if (current_frame_copy.buf == NULL) {
+        image_create(&current_frame_copy, img->w, img->h, img->type);
+    }
+    image_copy(img, &current_frame_copy);
+    current_frame = &current_frame_copy;
+    
     shared_data.width = img->w;
     shared_data.height = img->h;
     shared_data.frame_ready = true;
-    pthread_mutex_unlock(&mutex);
     
-    return img; // Return original image for further processing
+    pthread_mutex_unlock(&mutex);
+    return img;
 }
 
 bool depth_estimation_init(void) {
-
+    // Initialize mutex
+    pthread_mutex_init(&mutex, NULL);
+    
     // Initialize the model
+    int input_width, input_height;
     model_ctx = init_inference(MODEL_PATH, &input_width, &input_height);
     if (!model_ctx) {
         printf("[Depth Estimation] Failed to initialize model\n");
         return false;
     }
-
     printf("[Depth Estimation] Model initialized. Input dimensions: %dx%d\n", 
-          input_width, input_height);
-
-    // Create test image (all zeros)
-    int input_size = input_width * input_height * 3; // Assuming 3 channels (RGB)
-    test_image = (float*)calloc(input_size, sizeof(float));
-    if (!test_image) {
-        printf("[Depth Estimation] Failed to allocate test image\n");
+           input_width, input_height);
+    
+    // Register video callback
+    listener = cv_add_to_device(&DEPTH_ESTIMATION_CAMERA, depth_estimation_callback, 10, 0);
+    if (listener == NULL) {
+        printf("[Depth Estimation] Failed to register video callback\n");
         cleanup_inference(model_ctx);
         return false;
     }
-    // Initialize mutex
-    pthread_mutex_init(&mutex, NULL);
     
-    // Register video callback with FPS and filter arguments
-    listener = cv_add_to_device(&DEPTH_ESTIMATION_CAMERA, depth_estimation_callback, 10, 0);
-    
-    if (listener == NULL) {
-        printf("[Depth Estimation] Failed to register video callback\n");
-        return false;
-    }
-    
-    printf("[Depth Estimation] Initialized video capture\n");
+    printf("[Depth Estimation] Initialized successfully\n");
     return true;
 }
 
 void depth_estimation_periodic(void) {
-      if (!model_ctx || !test_image) {
-        printf("[Depth Estimation] Model or test image not initialized\n");
-        return;
-    }
+  static struct timeval start_time, end_time;
+  static int frame_count = 0;
+  
+  pthread_mutex_lock(&mutex);
+  bool frame_ready = shared_data.frame_ready;
+  struct image_t* frame_to_process = current_frame;
+  shared_data.frame_ready = false;
+  pthread_mutex_unlock(&mutex);
 
-    // Run inference on test image
-    DepthMapResult* result = run_inference(model_ctx, test_image);
-    if (!result) {
-        printf("[Depth Estimation] Inference failed\n");
-        return;
-    }
+  if (frame_ready && frame_to_process) {
+      frame_count++;
+      gettimeofday(&start_time, NULL);
 
-    // Print depth map statistics
-    save_depth_map("test", result);
+      // Process image and run inference
+      if (!process_image_and_infer(frame_to_process, &processed_img, model_ctx)) {
+          printf("[Depth Estimation] Processing or inference failed\n");
+          return;
+      }
 
-    // Cleanup
-    free_depth_map_result(result);
+      gettimeofday(&end_time, NULL);
+      long elapsed_ms = ((end_time.tv_sec - start_time.tv_sec) * 1000000 + 
+                        (end_time.tv_usec - start_time.tv_usec)) / 1000;
 
-    // Local copy of shared data
-    struct depth_data_t local_data;
-    
-    // Safely copy shared data
-    pthread_mutex_lock(&mutex);
-    local_data = shared_data;
-    shared_data.frame_ready = false; // Reset frame ready flag
-    pthread_mutex_unlock(&mutex);
-
-    // Process the data
-    if (local_data.frame_ready) {
-        printf("[Depth Estimation] New frame received: %dx%d\n", 
-               local_data.width, local_data.height);
-    }
+      if (frame_count % 30 == 0) {
+          printf("[Depth Estimation] Frame %d: Processing time %.2f ms\n", 
+                 frame_count, (float)elapsed_ms);
+      }
+  }
 }
 
 void depth_estimation_cleanup(void) {
-  pthread_mutex_destroy(&mutex);
-  if (test_image) {
-      free(test_image);
-      test_image = NULL;
-  }
-  if (model_ctx) {
-      cleanup_inference(model_ctx);
-      model_ctx = NULL;
-  }
+    pthread_mutex_destroy(&mutex);
+    
+    if (current_frame_copy.buf) {
+        image_free(&current_frame_copy);
+    }
+    
+    if (processed_img.buf) {
+        image_free(&processed_img);
+    }
+    
+    if (model_ctx) {
+        cleanup_inference(model_ctx);
+        model_ctx = NULL;
+    }
 }

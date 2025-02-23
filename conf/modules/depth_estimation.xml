@@ -9,6 +9,7 @@
     <file name="depth_estimation.h"/>
     <file name="model_loader.h"/>
     <file name="inference.h"/>
+    <file name="image_processor.h"/>
     <file name="stb_image.h"/>
     <file name="stb_image_resize2.h"/>
   </header>
@@ -25,6 +26,7 @@
     <file name="depth_estimation.c"/>
     <file name="model_loader.c"/>
     <file name="inference.c"/>
+    <file name="image_processor.c"/>
 
     <!-- Include path to tensorflow-->
     <flag name="CFLAGS" value="I$(PAPARAZZI_HOME)/sw/ext/tensorflow"/>
@@ -34,6 +36,16 @@
       ifdef PAPARAZZI_HOME
       LDFLAGS += -L$(PAPARAZZI_HOME)/sw/ext/tflite_AMD -ltensorflowlite_c
       LDFLAGS += -Wl,-rpath,$(PAPARAZZI_HOME)/sw/ext/tflite_AMD
+      endif
+    </raw>
+
+    <!-- Include path to libyuv  -->
+    <flag name="CFLAGS" value="I$(PAPARAZZI_HOME)/sw/ext/libyuv/include"/>
+
+    <!-- Link against libyuv -->
+    <raw>
+      ifdef PAPARAZZI_HOME
+      LDFLAGS += -L$(PAPARAZZI_HOME)/sw/ext/libyuv/lib -l:libyuv.a
       endif
     </raw>
 
