@@ -126,7 +126,7 @@ void free_depth_map_result(DepthMapResult* result) {
 
 void cleanup_inference(ModelContext* model_ctx) {
     if (model_ctx) {
-        free_model_context(model_ctx);  // Assuming this is the correct name from model_loader.h
+        free_model_context(model_ctx); 
     }
 }
 
