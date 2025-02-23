@@ -1,0 +1,2 @@
+/usr/bin/ar qc libmodel_runtime_info_proto.a CMakeFiles/model_runtime_info_proto.dir/__/__/__/tensorflow/lite/profiling/proto/model_runtime_info.pb.cc.o
+/usr/bin/ranlib libmodel_runtime_info_proto.a

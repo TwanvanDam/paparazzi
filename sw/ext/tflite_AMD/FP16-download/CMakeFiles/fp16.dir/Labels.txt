@@ -1,0 +1,14 @@
+# Target labels
+ fp16
+# Source files and their labels
+/home/daniel/tflite_build/FP16-download/CMakeFiles/fp16
+/home/daniel/tflite_build/FP16-download/CMakeFiles/fp16.rule
+/home/daniel/tflite_build/FP16-download/CMakeFiles/fp16-complete.rule
+/home/daniel/tflite_build/FP16-download/fp16-prefix/src/fp16-stamp/fp16-build.rule
+/home/daniel/tflite_build/FP16-download/fp16-prefix/src/fp16-stamp/fp16-configure.rule
+/home/daniel/tflite_build/FP16-download/fp16-prefix/src/fp16-stamp/fp16-download.rule
+/home/daniel/tflite_build/FP16-download/fp16-prefix/src/fp16-stamp/fp16-install.rule
+/home/daniel/tflite_build/FP16-download/fp16-prefix/src/fp16-stamp/fp16-mkdir.rule
+/home/daniel/tflite_build/FP16-download/fp16-prefix/src/fp16-stamp/fp16-patch.rule
+/home/daniel/tflite_build/FP16-download/fp16-prefix/src/fp16-stamp/fp16-test.rule
+/home/daniel/tflite_build/FP16-download/fp16-prefix/src/fp16-stamp/fp16-update.rule

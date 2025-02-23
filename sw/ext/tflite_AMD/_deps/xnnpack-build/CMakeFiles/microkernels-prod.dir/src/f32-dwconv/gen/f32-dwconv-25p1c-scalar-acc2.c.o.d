@@ -1,0 +1,45 @@
+_deps/xnnpack-build/CMakeFiles/microkernels-prod.dir/src/f32-dwconv/gen/f32-dwconv-25p1c-scalar-acc2.c.o: \
+ /home/daniel/tflite_build/xnnpack/src/f32-dwconv/gen/f32-dwconv-25p1c-scalar-acc2.c \
+ /usr/include/stdc-predef.h /usr/include/assert.h /usr/include/features.h \
+ /usr/include/features-time64.h \
+ /usr/include/x86_64-linux-gnu/bits/wordsize.h \
+ /usr/include/x86_64-linux-gnu/bits/timesize.h \
+ /usr/include/x86_64-linux-gnu/sys/cdefs.h \
+ /usr/include/x86_64-linux-gnu/bits/long-double.h \
+ /usr/include/x86_64-linux-gnu/gnu/stubs.h \
+ /usr/include/x86_64-linux-gnu/gnu/stubs-64.h \
+ /home/daniel/tflite_build/xnnpack/src/xnnpack/dwconv.h \
+ /usr/lib/gcc/x86_64-linux-gnu/11/include/stddef.h \
+ /usr/lib/gcc/x86_64-linux-gnu/11/include/stdint.h /usr/include/stdint.h \
+ /usr/include/x86_64-linux-gnu/bits/libc-header-start.h \
+ /usr/include/x86_64-linux-gnu/bits/types.h \
+ /usr/include/x86_64-linux-gnu/bits/typesizes.h \
+ /usr/include/x86_64-linux-gnu/bits/time64.h \
+ /usr/include/x86_64-linux-gnu/bits/wchar.h \
+ /usr/include/x86_64-linux-gnu/bits/stdint-intn.h \
+ /usr/include/x86_64-linux-gnu/bits/stdint-uintn.h \
+ /home/daniel/tflite_build/xnnpack/src/xnnpack/common.h \
+ /home/daniel/tflite_build/xnnpack/src/xnnpack/microparams.h \
+ /home/daniel/tflite_build/xnnpack/include/xnnpack.h \
+ /usr/lib/gcc/x86_64-linux-gnu/11/include/stdbool.h \
+ /home/daniel/tflite_build/pthreadpool-source/include/pthreadpool.h \
+ /home/daniel/tflite_build/xnnpack/src/xnnpack/math.h \
+ /usr/include/string.h \
+ /usr/include/x86_64-linux-gnu/bits/string_fortified.h \
+ /home/daniel/tflite_build/xnnpack/src/xnnpack/fp16.h \
+ /home/daniel/tflite_build/xnnpack/src/f16-dwconv/f16-dwconv-minmax-unipass.h \
+ /home/daniel/tflite_build/xnnpack/src/f32-dwconv/f32-dwconv-minmax-unipass.h \
+ /home/daniel/tflite_build/xnnpack/src/f32-dwconv/f32-dwconv-unipass.h \
+ /home/daniel/tflite_build/xnnpack/src/qs8-dwconv/qs8-dwconv-minmax-unipass-fp32.h \
+ /home/daniel/tflite_build/xnnpack/src/qs8-dwconv/qs8-dwconv-minmax-unipass-rndnu.h \
+ /home/daniel/tflite_build/xnnpack/src/qs8-qc8w-dwconv/qs8-qc8w-dwconv-minmax-unipass-fp32.h \
+ /home/daniel/tflite_build/xnnpack/src/qu8-dwconv/qu8-dwconv-minmax-unipass-fp32.h \
+ /home/daniel/tflite_build/xnnpack/src/qu8-dwconv/qu8-dwconv-minmax-unipass-rndnu.h \
+ /home/daniel/tflite_build/xnnpack/src/f16-dwconv/f16-dwconv-minmax-multipass.h \
+ /home/daniel/tflite_build/xnnpack/src/f32-dwconv/f32-dwconv-minmax-multipass.h \
+ /home/daniel/tflite_build/xnnpack/src/f32-dwconv/f32-dwconv-multipass.h \
+ /home/daniel/tflite_build/xnnpack/src/qs8-dwconv/qs8-dwconv-minmax-multipass-fp32.h \
+ /home/daniel/tflite_build/xnnpack/src/qs8-dwconv/qs8-dwconv-minmax-multipass-rndnu.h \
+ /home/daniel/tflite_build/xnnpack/src/qs8-qc8w-dwconv/qs8-qc8w-dwconv-minmax-multipass-fp32.h \
+ /home/daniel/tflite_build/xnnpack/src/qu8-dwconv/qu8-dwconv-minmax-multipass-fp32.h \
+ /home/daniel/tflite_build/xnnpack/src/qu8-dwconv/qu8-dwconv-minmax-multipass-rndnu.h

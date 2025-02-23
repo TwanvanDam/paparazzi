@@ -1,0 +1,13 @@
+# Target labels
+ flatbuffers-flatc
+# Source files and their labels
+/home/daniel/tflite_build/tensorflow-lite/CMakeFiles/flatbuffers-flatc
+/home/daniel/tflite_build/tensorflow-lite/CMakeFiles/flatbuffers-flatc.rule
+/home/daniel/tflite_build/tensorflow-lite/CMakeFiles/flatbuffers-flatc-complete.rule
+/home/daniel/tflite_build/flatbuffers-flatc/src/flatbuffers-flatc-stamp/flatbuffers-flatc-build.rule
+/home/daniel/tflite_build/flatbuffers-flatc/src/flatbuffers-flatc-stamp/flatbuffers-flatc-configure.rule
+/home/daniel/tflite_build/flatbuffers-flatc/src/flatbuffers-flatc-stamp/flatbuffers-flatc-download.rule
+/home/daniel/tflite_build/flatbuffers-flatc/src/flatbuffers-flatc-stamp/flatbuffers-flatc-install.rule
+/home/daniel/tflite_build/flatbuffers-flatc/src/flatbuffers-flatc-stamp/flatbuffers-flatc-mkdir.rule
+/home/daniel/tflite_build/flatbuffers-flatc/src/flatbuffers-flatc-stamp/flatbuffers-flatc-patch.rule
+/home/daniel/tflite_build/flatbuffers-flatc/src/flatbuffers-flatc-stamp/flatbuffers-flatc-update.rule

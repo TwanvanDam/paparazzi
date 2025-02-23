@@ -1,0 +1,43 @@
+<!DOCTYPE module SYSTEM "module.dtd">
+<module name="depth_estimation" dir="computer_vision/depth_estimation">
+  <doc>
+    <description>
+      Basic test module for monocular depth estimation
+    </description>
+  </doc>
+  <header>
+    <file name="depth_estimation.h"/>
+    <file name="model_loader.h"/>
+    <file name="inference.h"/>
+  </header>
+  <init fun="depth_estimation_init()"/>
+  <periodic fun="depth_estimation_periodic()" freq="1"/>
+  <makefile target="ap|nps">
+    <!-- Setup Video Feed -->
+    <configure name="VISION_LED" value="5"/>
+    <define name="CAMERA_CAPTURE_MODE" value="1"/>
+    <define name="VIDEO_THREAD" value="1"/>
+
+    <!-- Include source files -->
+    <file name="depth_estimation.c"/>
+    <file name="model_loader.c"/>
+    <file name="inference.c"/>
+
+    <!-- Include path to tensorflow-->
+    <flag name="CFLAGS" value="I$(PAPARAZZI_HOME)/sw/ext/tensorflow"/>
+    
+    <!-- Link against TensorFlow Lite -->
+    <raw>
+      ifdef PAPARAZZI_HOME
+      LDFLAGS += -L$(PAPARAZZI_HOME)/sw/ext/tflite_AMD -ltensorflowlite_c
+      LDFLAGS += -Wl,-rpath,$(PAPARAZZI_HOME)/sw/ext/tflite_AMD
+      endif
+    </raw>
+
+    <!-- Add math library -->
+    <flag name="LDFLAGS" value="lm"/>
+
+    <!-- Link to tflite model file -->
+    <flag name="CFLAGS" value="DMODEL_PATH=\\\"$(PAPARAZZI_HOME)/conf/models/model.tflite\\\""/>
+  </makefile>
+</module>
