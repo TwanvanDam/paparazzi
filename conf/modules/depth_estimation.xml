@@ -22,6 +22,7 @@
     <file name="model_loader.h"/>
     <file name="inference.h"/>
     <file name="image_processor.h"/>
+    <file name="stream_funcs.h"/>
     <file name="stb_image.h"/>
     <file name="stb_image_resize2.h"/>
   </header>
@@ -33,14 +34,24 @@
     <define name="CAMERA_CAPTURE_MODE" value="1"/>
     <define name="VIDEO_THREAD" value="1"/>
     <define name="DEPTH_ESTIMATION_CAMERA" value="front_camera"/>
-    <define name="PREPROCESSED_STREAM_PORT" value="5001"/>  <!-- 5000 is front camera -->
-    <define name="DEPTH_STREAM_PORT" value="5002"/>
 
-    <!-- Include source files -->
+    <!-- Include the video streaming dependencies -->
+    <file name="rtp.c" dir="modules/computer_vision/lib/encoding"/>
+    <!-- Define the network connection -->
+    <raw>
+      DEPTH_RTP_PORT_OUT ?= 5100
+      CFLAGS += -DDEPTH_RTP_PORT_OUT=$(DEPTH_RTP_PORT_OUT)
+    </raw>
+
+    <!-- Set port for custom stream -->
+    <define name="DEPTH_RTP_PORT_OUT" value="5100"/>
+    
+    <!-- Include module source files -->
     <file name="depth_estimation.c"/>
     <file name="model_loader.c"/>
     <file name="inference.c"/>
     <file name="image_processor.c"/>
+    <file name="stream_funcs.c"/>
 
     <!-- Include path to tensorflow-->
     <flag name="CFLAGS" value="I$(PAPARAZZI_HOME)/sw/ext/tensorflow"/>
@@ -68,5 +79,16 @@
 
     <!-- Link to tflite model file -->
     <flag name="CFLAGS" value="DMODEL_PATH=\\\"$(PAPARAZZI_HOME)/conf/models/model.tflite\\\""/>
+
+    <!-- Include path to libjpeg-turbo -->
+    <flag name="CFLAGS" value="I$(PAPARAZZI_HOME)/sw/ext/libjpeg-turbo/install/include"/>
+
+    <!-- Link libjpeg-turbo for rgb-jpeg conversion for debugging -->
+    <raw>
+      ifdef PAPARAZZI_HOME
+      LDFLAGS += -L$(PAPARAZZI_HOME)/sw/ext/libjpeg-turbo/install/lib -ljpeg
+      LDFLAGS += -Wl,-rpath,$(PAPARAZZI_HOME)/sw/ext/libjpeg-turbo/install/lib
+      endif
+    </raw>
   </makefile>
 </module>

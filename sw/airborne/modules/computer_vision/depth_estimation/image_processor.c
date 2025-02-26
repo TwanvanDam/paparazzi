@@ -10,15 +10,13 @@ void rgb_to_float_array(uint8_t* rgb_data, float* float_data, int width, int hei
     const float scale = 1.0f/255.0f;
     int total_pixels = width * height * 3;
     
-    #pragma omp simd
+    // #pragma omp simd
     for (int i = 0; i < total_pixels; i++) {
         float_data[i] = rgb_data[i] * scale;
     }
 }
 
 bool process_image(struct image_t *input, struct image_t *output, int target_width, int target_height) {
-  struct timespec step_start, step_end;
-  long step_time_ns;
   int result;  
   
   // printf("\nProcessing - input type:%d size:%dx%d\n", input->type, input->w, input->h);
@@ -170,9 +168,6 @@ bool process_image_and_infer(struct image_t *input, struct image_t *output, Mode
     if (!depth_result) {
         return false;
     }
-
-    // Print depth map statistics
-    save_depth_map("depth_stats", depth_result);
     
     // Cleanup
     free_depth_map_result(depth_result);

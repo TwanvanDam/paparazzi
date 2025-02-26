@@ -140,8 +140,8 @@ void cleanup_inference(ModelContext* model_ctx) {
     }
 }
 
-int save_depth_map(const char* filename, const DepthMapResult* depth_map) {
-    if (!depth_map || !depth_map->depth_map) return 0;
+void save_depth_map(const DepthMapResult* depth_map) {
+    if (!depth_map || !depth_map->depth_map) return;
 
     float min_depth = depth_map->depth_map[0];
     float max_depth = depth_map->depth_map[0];
@@ -162,5 +162,5 @@ int save_depth_map(const char* filename, const DepthMapResult* depth_map) {
     printf("Max depth: %.2f\n", max_depth);
     printf("Average depth: %.2f\n", avg_depth);
 
-    return 1;
+    return;
 }

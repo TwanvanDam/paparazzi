@@ -13,6 +13,6 @@ ModelContext* init_inference(const char* model_path);
 DepthMapResult* run_inference(ModelContext* model_ctx, float* preprocessed_data);
 void free_depth_map_result(DepthMapResult* result);
 void cleanup_inference(ModelContext* model_ctx);
-int save_depth_map(const char* filename, const DepthMapResult* depth_map);
+void save_depth_map(const DepthMapResult* depth_map);
 
 #endif // INFERENCE_H

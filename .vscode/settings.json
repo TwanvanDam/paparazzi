@@ -14,7 +14,8 @@
         "alignedvector3": "c",
         "fft": "c",
         "image_processor.h": "c",
-        "any": "c"
+        "any": "c",
+        "pthread.h": "c"
     },
     "C_Cpp.dimInactiveRegions": false,
     "esbonio.sphinx.confDir": "",

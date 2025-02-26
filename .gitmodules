@@ -56,3 +56,6 @@
 [submodule "sw/ext/tensorflow"]
 	path = sw/ext/tensorflow
 	url = https://github.com/tensorflow/tensorflow.git
+[submodule "sw/ext/libjpeg-turbo"]
+	path = sw/ext/libjpeg-turbo
+	url = https://github.com/libjpeg-turbo/libjpeg-turbo.git
