@@ -6,17 +6,13 @@
 #include <stdlib.h>
 #include <time.h>
 
-// Implementation of rgb_to_float_array
 void rgb_to_float_array(uint8_t* rgb_data, float* float_data, int width, int height) {
-    for (int i = 0; i < height; i++) {
-        for (int j = 0; j < width; j++) {
-            int rgb_idx = (i * width + j) * 3;
-            int float_idx = (i * width + j) * 3;
-            
-            float_data[float_idx] = rgb_data[rgb_idx] / 255.0f;     // R
-            float_data[float_idx + 1] = rgb_data[rgb_idx + 1] / 255.0f; // G
-            float_data[float_idx + 2] = rgb_data[rgb_idx + 2] / 255.0f; // B
-        }
+    const float scale = 1.0f/255.0f;
+    int total_pixels = width * height * 3;
+    
+    #pragma omp simd
+    for (int i = 0; i < total_pixels; i++) {
+        float_data[i] = rgb_data[i] * scale;
     }
 }
 
@@ -134,81 +130,52 @@ bool process_image(struct image_t *input, struct image_t *output) {
     );
     if (result != 0) return false;
 
-    // // Convert RGB to float array for inference
-    // static float* inference_input = NULL;
-    // if (!inference_input) {
-    //     inference_input = malloc(96 * 128 * 3 * sizeof(float));
-    //     if (!inference_input) return false;
-    // }
+    return true;
+}
 
-    // // // Time the inference preparation and execution
-    // // clock_gettime(CLOCK_MONOTONIC, &step_start);
-    
-    // // // rgb_to_float_array((uint8_t*)output->buf, inference_input, 96, 128);
+// Combine processing steps into a single function
+bool preprocess_image(struct image_t *input, struct image_t *rgb_output, float **normalized_output) {
+    // First process image to RGB
+    if (!process_image(input, rgb_output)) {
+        return false;
+    }
 
-    // // // // Run inference
-    // // // DepthMapResult* depth_result = run_inference(model_ctx, inference_input);
-    
-    // clock_gettime(CLOCK_MONOTONIC, &step_end);
-    // step_time_ns = (step_end.tv_sec - step_start.tv_sec) * 1000000000L + 
-    //                (step_end.tv_nsec - step_start.tv_nsec);
-    
-    // if (!depth_result) {
-    //     printf("Inference failed\n");
-    //     return false;
-    // }
+    // Allocate normalized float array
+    *normalized_output = malloc(96 * 128 * 3 * sizeof(float));
+    if (!*normalized_output) {
+        return false;
+    }
 
-    // printf("Inference took %.3f ms\n", step_time_ns / 1000000.0);
-    
-    // // Print depth map statistics
-    // save_depth_map("depth_stats", depth_result);
-    
-    // // Cleanup
-    // free_depth_map_result(depth_result);
+    // Convert RGB to normalized float array
+    rgb_to_float_array((uint8_t*)rgb_output->buf, *normalized_output, 96, 128);
 
     return true;
 }
 
+// Combine processing with inference
 bool process_image_and_infer(struct image_t *input, struct image_t *output, ModelContext* model_ctx) {
-  if (!process_image(input, output)) {
-      return false;
-  }
+    if (!model_ctx) {
+        return false;
+    }
 
-  if (!model_ctx) {
-      return false;
-  }
+    float* normalized_input = NULL;
+    if (!preprocess_image(input, output, &normalized_input)) {
+        return false;
+    }
 
-  // Convert RGB to float array for inference
-  float* inference_input = malloc(96 * 128 * 3 * sizeof(float));
-  if (!inference_input) {
-      return false;
-  }
+    // Run inference
+    DepthMapResult* depth_result = run_inference(model_ctx, normalized_input);
+    free(normalized_input);
 
-  // Convert RGB data to normalized float array
-  uint8_t* rgb_data = (uint8_t*)output->buf;
-  for (int i = 0; i < 128; i++) {
-      for (int j = 0; j < 96; j++) {
-          int rgb_idx = (i * 96 + j) * 3;
-          int float_idx = (i * 96 + j) * 3;
-          inference_input[float_idx] = rgb_data[rgb_idx] / 255.0f;     // R
-          inference_input[float_idx + 1] = rgb_data[rgb_idx + 1] / 255.0f; // G
-          inference_input[float_idx + 2] = rgb_data[rgb_idx + 2] / 255.0f; // B
-      }
-  }
+    if (!depth_result) {
+        return false;
+    }
 
-  // Run inference
-  DepthMapResult* depth_result = run_inference(model_ctx, inference_input);
-  free(inference_input);
+    // Print depth map statistics
+    save_depth_map("depth_stats", depth_result);
+    
+    // Cleanup
+    free_depth_map_result(depth_result);
 
-  if (!depth_result) {
-      return false;
-  }
-
-  // Print depth map statistics
-  save_depth_map("depth_stats", depth_result);
-  
-  // Cleanup
-  free_depth_map_result(depth_result);
-
-  return true;
+    return true;
 }

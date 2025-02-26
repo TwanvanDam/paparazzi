@@ -1,9 +1,16 @@
+// Standard includes
 #include <stdio.h>
 #include <stdlib.h>
+
+// External includes
 #include <pthread.h>
+
+// Project includes
 #include "depth_estimation.h"
 #include "inference.h"
 #include "image_processor.h"
+
+// Paparazzi includes
 #include "modules/computer_vision/cv.h"
 #include "modules/computer_vision/lib/vision/image.h"
 
@@ -73,8 +80,6 @@ bool depth_estimation_init(void) {
 }
 
 void depth_estimation_periodic(void) {
-  static struct timeval start_time, end_time;
-  static int frame_count = 0;
   
   pthread_mutex_lock(&mutex);
   bool frame_ready = shared_data.frame_ready;
@@ -83,22 +88,11 @@ void depth_estimation_periodic(void) {
   pthread_mutex_unlock(&mutex);
 
   if (frame_ready && frame_to_process) {
-      frame_count++;
-      gettimeofday(&start_time, NULL);
 
       // Process image and run inference
       if (!process_image_and_infer(frame_to_process, &processed_img, model_ctx)) {
           printf("[Depth Estimation] Processing or inference failed\n");
           return;
-      }
-
-      gettimeofday(&end_time, NULL);
-      long elapsed_ms = ((end_time.tv_sec - start_time.tv_sec) * 1000000 + 
-                        (end_time.tv_usec - start_time.tv_usec)) / 1000;
-
-      if (frame_count % 30 == 0) {
-          printf("[Depth Estimation] Frame %d: Processing time %.2f ms\n", 
-                 frame_count, (float)elapsed_ms);
       }
   }
 }

@@ -2,9 +2,21 @@
 <module name="depth_estimation" dir="computer_vision/depth_estimation">
   <doc>
     <description>
-      Basic test module for monocular depth estimation
+      Monocular depth estimation using lightweight network from [Papa, (2023), https://doi.org/10.3390/s23042223]
     </description>
   </doc>
+  <settings>
+    <dl_settings>
+      <dl_settings name="depth">
+        <dl_setting var="depth_estimation.enabled" min="0" max="1" step="1" 
+              shortname="depth_enable" module="depth_estimation"
+              values="OFF|ON"/>
+        <dl_setting var="depth_estimation.stream_enabled" min="0" max="1" step="1" 
+                    shortname="stream_enable" module="depth_estimation"
+                    values="OFF|ON"/>
+      </dl_settings>
+    </dl_settings>
+  </settings>
   <header>
     <file name="depth_estimation.h"/>
     <file name="model_loader.h"/>
@@ -21,6 +33,8 @@
     <define name="CAMERA_CAPTURE_MODE" value="1"/>
     <define name="VIDEO_THREAD" value="1"/>
     <define name="DEPTH_ESTIMATION_CAMERA" value="front_camera"/>
+    <define name="PREPROCESSED_STREAM_PORT" value="5001"/>  <!-- 5000 is front camera -->
+    <define name="DEPTH_STREAM_PORT" value="5002"/>
 
     <!-- Include source files -->
     <file name="depth_estimation.c"/>
