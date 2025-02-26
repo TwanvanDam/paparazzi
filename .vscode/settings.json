@@ -15,7 +15,8 @@
         "fft": "c",
         "image_processor.h": "c",
         "any": "c",
-        "pthread.h": "c"
+        "pthread.h": "c",
+        "*.inc": "c"
     },
     "C_Cpp.dimInactiveRegions": false,
     "esbonio.sphinx.confDir": "",

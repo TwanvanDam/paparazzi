@@ -21,7 +21,7 @@ static void init_colormap(struct stream_context_t* ctx) {
 }
 
 static bool rgb_to_jpeg(float* rgb_data, int width, int height, struct image_t* out) {
-    printf("[Stream] Starting JPEG conversion %dx%d\n", width, height);
+    // printf("[Stream] Starting JPEG conversion %dx%d\n", width, height);
     
     if (!rgb_data || !out) {
         printf("[Stream] Invalid input parameters\n");
@@ -38,14 +38,14 @@ static bool rgb_to_jpeg(float* rgb_data, int width, int height, struct image_t* 
         return false;
     }
 
-    printf("[Stream] Converting float to uint8\n");
+    // printf("[Stream] Converting float to uint8\n");
     for(int i = 0; i < width * height * 3; i++) {
         float val = rgb_data[i];
         val = val < 0.0f ? 0.0f : (val > 1.0f ? 1.0f : val);
         rgb_bytes[i] = (uint8_t)(val * 255.0f);
     }
 
-    printf("[Stream] Setting up JPEG compression\n");
+    // printf("[Stream] Setting up JPEG compression\n");
     cinfo.err = jpeg_std_error(&jerr);
     jpeg_create_compress(&cinfo);
 
@@ -58,11 +58,11 @@ static bool rgb_to_jpeg(float* rgb_data, int width, int height, struct image_t* 
     cinfo.input_components = 3;
     cinfo.in_color_space = JCS_RGB;
 
-    printf("[Stream] Setting JPEG parameters\n");
+    // printf("[Stream] Setting JPEG parameters\n");
     jpeg_set_defaults(&cinfo);
     jpeg_set_quality(&cinfo, VIEWVIDEO_QUALITY_FACTOR, TRUE);
     
-    printf("[Stream] Starting compression\n");
+    // printf("[Stream] Starting compression\n");
     jpeg_start_compress(&cinfo, TRUE);
 
     JSAMPROW row_pointer[1];
@@ -71,7 +71,7 @@ static bool rgb_to_jpeg(float* rgb_data, int width, int height, struct image_t* 
         jpeg_write_scanlines(&cinfo, row_pointer, 1);
     }
 
-    printf("[Stream] Finishing compression\n");
+    // printf("[Stream] Finishing compression\n");
     jpeg_finish_compress(&cinfo);
     
     out->buf = outbuffer;
@@ -83,7 +83,7 @@ static bool rgb_to_jpeg(float* rgb_data, int width, int height, struct image_t* 
     free(rgb_bytes);
     jpeg_destroy_compress(&cinfo);
     
-    printf("[Stream] JPEG conversion complete. Output size: %lu bytes\n", outsize);
+    // printf("[Stream] JPEG conversion complete. Output size: %lu bytes\n", outsize);
     return true;
 }
 
@@ -260,7 +260,7 @@ void stream_frame(struct stream_context_t* ctx, float* rgb_data, int width, int 
         last_height = height;
     }
 
-    printf("[Stream] Streaming frame %dx%d\n", width, height);
+    // printf("[Stream] Streaming frame %dx%d\n", width, height);
     
     if (ctx->img_jpeg.buf != NULL) {
         free(ctx->img_jpeg.buf);
@@ -274,7 +274,7 @@ void stream_frame(struct stream_context_t* ctx, float* rgb_data, int width, int 
     }
 
     // Stream using RTP
-    printf("[Stream] Sending RTP frame of size %u bytes\n", ctx->img_jpeg.buf_size);
+    // printf("[Stream] Sending RTP frame of size %u bytes\n", ctx->img_jpeg.buf_size);
     rtp_frame_send(
         &ctx->video_sock,
         &ctx->img_jpeg,
@@ -285,7 +285,7 @@ void stream_frame(struct stream_context_t* ctx, float* rgb_data, int width, int 
         &ctx->rtp_packet_nr,
         &ctx->rtp_frame_time
     );
-    printf("[Stream] Frame sent\n");
+    // printf("[Stream] Frame sent\n");
 }
 
 void stream_depth(struct stream_context_t* ctx, float* depth_map, int width, int height, 

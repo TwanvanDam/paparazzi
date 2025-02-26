@@ -3,5 +3,5 @@ m=video 5100 RTP/AVP 26
 c=IN IP4 127.0.0.1
 a=rtpmap:26 JPEG/90000
 a=framerate:10.0
-a=framesize:26 520-240
+a=framesize:26 128-96
 a=title:PPRZ Depth Stream

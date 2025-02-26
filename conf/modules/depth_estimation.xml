@@ -27,7 +27,7 @@
     <file name="stb_image_resize2.h"/>
   </header>
   <init fun="depth_estimation_init()"/>
-  <periodic fun="depth_estimation_periodic()" freq="1"/>
+  <periodic fun="depth_estimation_periodic()" freq="5"/>
   <makefile target="ap|nps">
     <!-- Setup Video Feed -->
     <configure name="VISION_LED" value="5"/>

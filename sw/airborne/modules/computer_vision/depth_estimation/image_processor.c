@@ -103,7 +103,7 @@ bool process_image(struct image_t *input, struct image_t *output, int target_wid
     );
     if (result != 0) return false;
 
-    // Scale to model input size (96xtarget_width)
+    // Scale to model input size (target_heightxtarget_width)
     result = I422Scale(
         rotated_y, input->h,
         rotated_u, input->h/2,
