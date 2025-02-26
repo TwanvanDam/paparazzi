@@ -3,7 +3,7 @@
 #include "tensorflow/lite/c/c_api.h"
 #include "inference.h"
 
-ModelContext* init_inference(const char* model_path, int* input_width, int* input_height) {
+ModelContext* init_inference(const char* model_path) {
     // Load model
     ModelContext* model_ctx = load_model(model_path);
     if (!model_ctx) {
@@ -19,6 +19,13 @@ ModelContext* init_inference(const char* model_path, int* input_width, int* inpu
         return NULL;
     }
 
+    TfLiteTensor* output_tensor = TfLiteInterpreterGetOutputTensor(model_ctx->interpreter, 0);
+    if (!output_tensor) {
+        printf("[Depth Estimation] Failed to get output tensor\n");
+        cleanup_inference(model_ctx);
+        return false;
+    }
+
     // Get dimensions from tensor
     int num_dims = TfLiteTensorNumDims(input_tensor);
     if (num_dims != 4) {  // [batch, height, width, channels]
@@ -27,8 +34,11 @@ ModelContext* init_inference(const char* model_path, int* input_width, int* inpu
         return NULL;
     }
 
-    *input_height = TfLiteTensorDim(input_tensor, 1);
-    *input_width = TfLiteTensorDim(input_tensor, 2);
+    // Store input and output dimensions for later use
+    model_ctx->input_width = TfLiteTensorDim(input_tensor, 1);
+    model_ctx->input_height = TfLiteTensorDim(input_tensor, 2);
+    model_ctx->output_height = TfLiteTensorDim(output_tensor, 1);
+    model_ctx->output_width = TfLiteTensorDim(output_tensor, 2);
 
     return model_ctx;
 }

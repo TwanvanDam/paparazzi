@@ -35,7 +35,7 @@ static struct image_t current_frame_copy = {.buf=NULL};
 static struct image_t processed_img = {.buf=NULL};
 
 // Video callback function (runs in video thread)
-static struct image_t* depth_estimation_callback(struct image_t* img, uint8_t camera_id) {
+static struct image_t* depth_estimation_callback(struct image_t* img) {
     pthread_mutex_lock(&mutex);
     
     // Make a proper copy of the image
@@ -58,14 +58,14 @@ bool depth_estimation_init(void) {
     pthread_mutex_init(&mutex, NULL);
     
     // Initialize the model
-    int input_width, input_height;
-    model_ctx = init_inference(MODEL_PATH, &input_width, &input_height);
+    model_ctx = init_inference(MODEL_PATH);
     if (!model_ctx) {
         printf("[Depth Estimation] Failed to initialize model\n");
         return false;
     }
-    printf("[Depth Estimation] Model initialized. Input dimensions: %dx%d\n", 
-           input_width, input_height);
+
+    printf("[Depth Estimation] Model initialized. Input dimensions: %dx%d, Output dimensions: %dx%d\n", 
+        model_ctx->input_width, model_ctx->input_height, model_ctx->output_width, model_ctx->output_height);
     
     // Register video callback
     listener = cv_add_to_device(&DEPTH_ESTIMATION_CAMERA, depth_estimation_callback, 10, 0);

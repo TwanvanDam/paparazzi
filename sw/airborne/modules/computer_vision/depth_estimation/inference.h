@@ -9,7 +9,7 @@ typedef struct {
     int height;
 } DepthMapResult;
 
-ModelContext* init_inference(const char* model_path, int* input_width, int* input_height);
+ModelContext* init_inference(const char* model_path);
 DepthMapResult* run_inference(ModelContext* model_ctx, float* preprocessed_data);
 void free_depth_map_result(DepthMapResult* result);
 void cleanup_inference(ModelContext* model_ctx);

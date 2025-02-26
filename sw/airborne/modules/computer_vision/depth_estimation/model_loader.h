@@ -8,6 +8,10 @@ typedef struct {
     TfLiteModel* model;
     TfLiteInterpreterOptions* options;
     TfLiteInterpreter* interpreter;
+    int input_width;
+    int input_height;
+    int output_width;
+    int output_height;
 } ModelContext;
 
 // Function declarations

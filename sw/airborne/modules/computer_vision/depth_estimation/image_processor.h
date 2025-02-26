@@ -6,7 +6,7 @@
 #include <stdbool.h>
 
 // Basic image processing
-bool process_image(struct image_t *input, struct image_t *output);
+bool process_image(struct image_t *input, struct image_t *output, int target_width, int target_height);
 
 // Process image and run inference
 bool process_image_and_infer(struct image_t *input, struct image_t *output, ModelContext* model_ctx);
