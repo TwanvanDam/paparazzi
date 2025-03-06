@@ -10,6 +10,7 @@
 #include "modules/computer_vision/lib/vision/image.h"
 #include "modules/computer_vision/lib/encoding/rtp.h"
 #include "modules/computer_vision/lib/encoding/jpeg.h"
+#include "modules/core/abi.h"
 
 // Project includes
 #include "video_stream.h"  // For streaming functionality
@@ -224,6 +225,7 @@ void obstacle_detection_periodic(void) {
     // Run inference
     struct model_output_t model_output;
     if (run_inference(rgb, frame->w, frame->h, &model_output)) {
+    uint8_t sender_id = 38; 
         // Print inference results periodically
         if (shared_data.frames_processed % 30 == 0) {
             debug_print("\nInference results:\n");
@@ -232,7 +234,11 @@ void obstacle_detection_periodic(void) {
                 debug_print("%.3f ", model_output.values[i]);
             }
             debug_print("\n");
+
         }
+            	AbiSendMsgEXAMPLE(sender_id, model_output.values[0], model_output.values[1], model_output.values[2], model_output.values[3], model_output.values[4]);
+    	
+	printf("Sending Model Data via ABI: %f %f %f %f %f\n", model_output.values[0], model_output.values[1], model_output.values[2], model_output.values[3], model_output.values[4]);
     } else {
         debug_print("[Obstacle Detection] Inference failed\n");
     }

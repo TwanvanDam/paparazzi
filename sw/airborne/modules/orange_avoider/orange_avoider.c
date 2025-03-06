@@ -37,6 +37,13 @@
 #define VERBOSE_PRINT(...)
 #endif
 
+#ifndef EXAMPLE_LISTENER_H
+#define EXAMPLE_LISTENER_H
+
+void register_example_listener(void);  // Function declaration
+
+#endif  // EXAMPLE_LISTENER_H
+
 static uint8_t moveWaypointForward(uint8_t waypoint, float distanceMeters);
 static uint8_t calculateForwards(struct EnuCoor_i *new_coor, float distanceMeters);
 static uint8_t moveWaypoint(uint8_t waypoint, struct EnuCoor_i *new_coor);
@@ -81,15 +88,29 @@ static void color_detection_cb(uint8_t __attribute__((unused)) sender_id,
   color_count = quality;
 }
 
-/*
+// Callback function
+void example_message_handler(uint8_t sender_id, float v1, float v2, float v3, float v4, float v5) {
+    VERBOSE_PRINT("Received EXAMPLE message from sender %d: %f, %f, %f, %f, %f\n", 
+           sender_id, v1, v2, v3, v4, v5);
+}
+
+// Function to register listener
+void register_example_listener(void) {
+    static abi_event example_event;
+    AbiBindMsgEXAMPLE(38, &example_event, example_message_handler);
+}
+
+
+/*b
  * Initialisation function, setting the colour filter, random seed and heading_increment
  */
+
 void orange_avoider_init(void)
 {
   // Initialise random values
   srand(time(NULL));
   chooseRandomIncrementAvoidance();
-
+	register_example_listener();
   // bind our colorfilter callbacks to receive the color filter outputs
   AbiBindMsgVISUAL_DETECTION(ORANGE_AVOIDER_VISUAL_DETECTION_ID, &color_detection_ev, color_detection_cb);
 }

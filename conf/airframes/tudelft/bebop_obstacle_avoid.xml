@@ -37,7 +37,9 @@
 
     <!-- Our obstacle detection module -->
     <module name="obstacle_avoider_obstacle_detection"/>
-
+    <module name="orange_avoider">
+      <define name="ORANGE_AVOIDER_VISUAL_DETECTION_ID" value="COLOR_OBJECT_DETECTION1_ID"/>
+    </module>
     <!-- Video/Camera modules -->
     <module name="bebop_cam">
       <configure name="BEBOP_FRONT_CAMERA_TYPE" value="MT9F002"/>
