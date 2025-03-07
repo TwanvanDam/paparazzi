@@ -125,7 +125,7 @@ void orange_avoider_guided_periodic(void)
   // Only run the mudule if we are in the correct flight mode
   if (guidance_h.mode != GUIDANCE_H_MODE_GUIDED) {
     navigation_state = SEARCH_FOR_SAFE_HEADING;
-    obstacle_free_confidence = 0;
+    obstacle_free_confidence = 3;
     return;
   }
 
