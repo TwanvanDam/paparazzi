@@ -236,7 +236,7 @@ void obstacle_detection_periodic(void) {
             debug_print("\n");
 
         }
-            	AbiSendMsgEXAMPLE(sender_id, model_output.values[0], model_output.values[1], model_output.values[2], model_output.values[3], model_output.values[4]);
+            	AbiSendMsgMODELDATA(sender_id, model_output.values[0], model_output.values[1], model_output.values[2], model_output.values[3], model_output.values[4]);
     	
 	printf("Sending Model Data via ABI: %f %f %f %f %f\n", model_output.values[0], model_output.values[1], model_output.values[2], model_output.values[3], model_output.values[4]);
     } else {
