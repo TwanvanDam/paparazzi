@@ -4,7 +4,6 @@
   <description>
     Bebop drone with obstacle detection using ONNX2C model
   </description>
-
   <firmware name="rotorcraft">
     <target name="ap" board="bebop">
       <define name="VIDEO_CAPTURE_PATH" value="/data/ftp/internal_000/images"/>

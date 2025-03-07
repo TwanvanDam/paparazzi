@@ -26,9 +26,10 @@ bool init_yuv_conversion(void) {
                 float b = (y + 1.772f * uf);
 
                 // Clamp and normalize to 0-1
-                yuv_to_r[y][v] = r < 0 ? 0 : (r > 255 ? 1 : r / 255.0f);
-                yuv_to_g[y][u][v] = g < 0 ? 0 : (g > 255 ? 1 : g / 255.0f);
-                yuv_to_b[y][u] = b < 0 ? 0 : (b > 255 ? 1 : b / 255.0f);
+	yuv_to_r[y][v] = r < 0 ? 0 : (r > 255 ? 255 : r);
+	yuv_to_g[y][u][v] = g < 0 ? 0 : (g > 255 ? 255 : g);
+	yuv_to_b[y][u] = b < 0 ? 0 : (b > 255 ? 255 : b);
+
             }
         }
     }
