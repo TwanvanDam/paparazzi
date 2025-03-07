@@ -87,7 +87,7 @@ int32_t floor_centroid = 0;             // floor detector centroid in y directio
 float avoidance_heading_direction = 0;  // heading change direction for avoidance [rad/s]
 int16_t obstacle_free_confidence = 0;   // a measure of how certain we are that the way ahead if safe.
 float oag_max_speed = 0.5f;               // max flight speed [m/s]
-float oag_heading_rate = RadOfDeg(20.f);
+float oag_heading_rate = RadOfDeg(60.f);
 
 const int16_t max_trajectory_confidence = 5;  // number of consecutive negative object detections to be sure we are obstacle free
 
@@ -122,53 +122,42 @@ void orange_avoider_guided_init(void)
  */
 void orange_avoider_guided_periodic(void)
 {
-  // Only run the mudule if we are in the correct flight mode
   if (guidance_h.mode != GUIDANCE_H_MODE_GUIDED) {
     navigation_state = SEARCH_FOR_SAFE_HEADING;
     obstacle_free_confidence = 3;
     return;
   }
 
-  // bound obstacle_free_confidence
+  // Bound obstacle_free_confidence
   Bound(obstacle_free_confidence, 0, max_trajectory_confidence);
 
-  float speed_sp = fminf(oag_max_speed, 0.2f * obstacle_free_confidence);
+  float speed_sp = oag_max_speed;
 
-  switch (navigation_state){
-    case SAFE:
-        guidance_h_set_heading_rate(avoidance_heading_direction * RadOfDeg(15));
-
-      break;
-    case OBSTACLE_FOUND:
-      // stop
-      guidance_h_set_body_vel(0, 0);
-
-      navigation_state = SEARCH_FOR_SAFE_HEADING;
-
-      break;
-    case SEARCH_FOR_SAFE_HEADING:
-      guidance_h_set_heading_rate(oag_heading_rate);
-
-      break;
-    case OUT_OF_BOUNDS:
-      // stop
-      guidance_h_set_body_vel(0, 0);
-
-      // start turn back into arena
-      guidance_h_set_heading_rate(avoidance_heading_direction * RadOfDeg(15));
-
-      navigation_state = REENTER_ARENA;
-
-      break;
-    case REENTER_ARENA:
-
-        // ensure direction is safe before continuing
-        navigation_state = SAFE;
-      
-      break;
-    default:
-      break;
+  // Find the highest danger column
+  int max_danger_index = 0;
+  float max_danger_value = danger_columns[0];
+  for (int i = 1; i < 5; i++) {
+    if (danger_columns[i] > max_danger_value) {
+      max_danger_value = danger_columns[i];
+      max_danger_index = i;
+    }
   }
+
+  // Determine heading direction based on the most dangerous side
+  if (max_danger_index < 2) {
+    // Danger is more on the left, turn right
+    avoidance_heading_direction = oag_heading_rate;
+  } else if (max_danger_index > 2) {
+    // Danger is more on the right, turn left
+    avoidance_heading_direction = -oag_heading_rate;
+  } else {
+    // Danger is in the center, stop and turn in place
+    avoidance_heading_direction = oag_heading_rate;
+  }
+  
+  guidance_h_set_body_vel(speed_sp, 0);
+  guidance_h_set_heading_rate(avoidance_heading_direction * RadOfDeg(15));
+
   return;
 }
 
