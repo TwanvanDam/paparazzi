@@ -27,7 +27,6 @@
   </header>
   <init fun="obstacle_detection_init()"/>
   <periodic fun="obstacle_detection_periodic()" freq="30"/>
-
   <makefile target="ap|nps">
     <!-- Setup Video Feed -->
     <define name="VIDEO_THREAD" value="1"/>
