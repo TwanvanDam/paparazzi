@@ -1,9 +1,3 @@
-/*
- * Copyright (C) Roland Meertens
- *
- * This file is part of paparazzi
- *
- */
 /**
  * @file "modules/orange_avoider/orange_avoider.c"
  * @author Roland Meertens
@@ -59,7 +53,6 @@ enum navigation_state_t {
 
 // define settings
 float oa_color_count_frac = 0.18f;
-// Global variable to store latest danger values
 float danger_columns[5] = {0, 0, 0, 0, 0};
 
 // define and initialise global variables
@@ -107,17 +100,16 @@ void register_modeldata_listener(void) {
     AbiBindMsgMODELDATA(38, &modeldata_event, modeldata_message_handler);
 }
 
-
-/*b
+/*
  * Initialisation function, setting the colour filter, random seed and heading_increment
  */
-
 void orange_avoider_init(void)
 {
   // Initialise random values
   srand(time(NULL));
   chooseRandomIncrementAvoidance();
-	register_modeldata_listener();
+  register_modeldata_listener();
+
   // bind our colorfilter callbacks to receive the color filter outputs
   AbiBindMsgVISUAL_DETECTION(ORANGE_AVOIDER_VISUAL_DETECTION_ID, &color_detection_ev, color_detection_cb);
 }
@@ -127,60 +119,83 @@ void orange_avoider_init(void)
  */
 void orange_avoider_periodic(void)
 {
+  // only evaluate our state machine if we are flying
   if(!autopilot_in_flight()){
     return;
   }
 
-  // Compute total danger per side
-  float left_danger = danger_columns[0] + danger_columns[1];
-  float center_danger = danger_columns[2];
-  float right_danger = danger_columns[3] + danger_columns[4];
 
-  VERBOSE_PRINT("Left Danger: %f, Center: %f, Right Danger: %f\n", left_danger, center_danger, right_danger);
+  // compute current color thresholds
+  int32_t color_count_threshold = oa_color_count_frac * front_camera.output_size.w * front_camera.output_size.h;
 
-  switch (navigation_state) {
+  VERBOSE_PRINT("Color_count: %d  threshold: %d state: %d \n", color_count, color_count_threshold, navigation_state);
+
+  // update our safe confidence using color threshold
+  if(color_count < color_count_threshold){
+    obstacle_free_confidence++;
+  } else {
+    obstacle_free_confidence -= 2;  // be more cautious with positive obstacle detections
+  }
+
+  // bound obstacle_free_confidence
+  Bound(obstacle_free_confidence, 0, max_trajectory_confidence);
+
+  float moveDistance = fminf(maxDistance, 0.2f * obstacle_free_confidence);
+
+  switch (navigation_state){
     case SAFE:
-      if (center_danger > 0.3) {  // If center is dangerous, stop and find a new heading
+      // Move waypoint forward
+      moveWaypointForward(WP_TRAJECTORY, 1.5f * moveDistance);
+      if (!InsideObstacleZone(WaypointX(WP_TRAJECTORY),WaypointY(WP_TRAJECTORY))){
+        navigation_state = OUT_OF_BOUNDS;
+      } else if (obstacle_free_confidence == 0){
         navigation_state = OBSTACLE_FOUND;
-      } else if (left_danger > right_danger) {
-        heading_increment = 10.f;  // Turn right
-        navigation_state = SEARCH_FOR_SAFE_HEADING;
-      } else if (right_danger > left_danger) {
-        heading_increment = -10.f; // Turn left
-        navigation_state = SEARCH_FOR_SAFE_HEADING;
       } else {
-        moveWaypointForward(WP_GOAL, 1.0f);
-        moveWaypointForward(WP_TRAJECTORY, 1.5f);
+        moveWaypointForward(WP_GOAL, moveDistance);
+        moveWaypointForward(WP_RETREAT, -1.0f * moveDistance);
       }
-      break;
 
+      break;
     case OBSTACLE_FOUND:
+      // stop
       waypoint_move_here_2d(WP_GOAL);
       waypoint_move_here_2d(WP_RETREAT);
       waypoint_move_here_2d(WP_TRAJECTORY);
-      chooseRandomIncrementAvoidance();
-      navigation_state = SEARCH_FOR_SAFE_HEADING;
-      break;
 
+      // randomly select new search direction
+      chooseRandomIncrementAvoidance();
+
+      navigation_state = SEARCH_FOR_SAFE_HEADING;
+
+      break;
     case SEARCH_FOR_SAFE_HEADING:
       increase_nav_heading(heading_increment);
-      if (center_danger < 0.1) {
+
+      // make sure we have a couple of good readings before declaring the way safe
+      if (obstacle_free_confidence >= 2){
         navigation_state = SAFE;
       }
       break;
-
     case OUT_OF_BOUNDS:
       increase_nav_heading(heading_increment);
       moveWaypointForward(WP_TRAJECTORY, 1.5f);
       moveWaypointForward(WP_RETREAT, -1.0f);
-      if (center_danger < 0.1) {
-        navigation_state = SAFE;
+
+      if (InsideObstacleZone(WaypointX(WP_TRAJECTORY),WaypointY(WP_TRAJECTORY))){
+        // add offset to head back into arena
+        increase_nav_heading(heading_increment);
+
+        // reset safe counter
+        obstacle_free_confidence = 0;
+
+        // ensure direction is safe before continuing
+        navigation_state = SEARCH_FOR_SAFE_HEADING;
       }
       break;
-
     default:
       break;
   }
+  return;
 }
 
 /*
@@ -253,4 +268,5 @@ uint8_t chooseRandomIncrementAvoidance(void)
   }
   return false;
 }
+
 

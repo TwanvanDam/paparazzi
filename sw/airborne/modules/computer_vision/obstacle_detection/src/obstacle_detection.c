@@ -238,7 +238,6 @@ void obstacle_detection_periodic(void) {
         }
             	AbiSendMsgMODELDATA(sender_id, model_output.values[0], model_output.values[1], model_output.values[2], model_output.values[3], model_output.values[4]);
     	
-	printf("Sending Model Data via ABI: %f %f %f %f %f\n", model_output.values[0], model_output.values[1], model_output.values[2], model_output.values[3], model_output.values[4]);
     } else {
         debug_print("[Obstacle Detection] Inference failed\n");
     }
