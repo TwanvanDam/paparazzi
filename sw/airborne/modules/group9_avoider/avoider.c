@@ -91,6 +91,7 @@ float oag_heading_rate = RadOfDeg(60.f);
 
 const int16_t max_trajectory_confidence = 5;  // number of consecutive negative object detections to be sure we are obstacle free
 
+
 // Callback function
 void modeldata_message_handler(uint8_t sender_id, float v1, float v2, float v3, float v4, float v5) {
     debug_print("\nReceived MODELDATA message from sender %d: %f, %f, %f, %f, %f\n", 
