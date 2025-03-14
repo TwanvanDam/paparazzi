@@ -174,7 +174,7 @@ void orange_avoider_guided_periodic(void)
        guidance_h_set_body_vel(0, 0);
 
        // start turn back into arena
-       guidance_h_set_heading_rate(avoidance_heading_direction * RadOfDeg(15));
+       guidance_h_set_heading_rate(avoidance_heading_direction * RadOfDeg(60));
 
 
 
