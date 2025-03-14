@@ -28,6 +28,7 @@
 #include "avoider.h"
 #include "firmwares/rotorcraft/guidance/guidance_h.h"
 #include "generated/airframe.h"
+ #include "generated/flight_plan.h"
 #include "state.h"
 #include "modules/core/abi.h"
 #include <stdio.h>
@@ -125,40 +126,80 @@ void orange_avoider_guided_periodic(void)
 {
   if (guidance_h.mode != GUIDANCE_H_MODE_GUIDED) {
     navigation_state = SEARCH_FOR_SAFE_HEADING;
-    obstacle_free_confidence = 3;
     return;
   }
 
-  // Bound obstacle_free_confidence
-  Bound(obstacle_free_confidence, 0, max_trajectory_confidence);
-
   float speed_sp = oag_max_speed;
 
-  // Find the highest danger column
-  int max_danger_index = 0;
-  float max_danger_value = danger_columns[0];
-  for (int i = 1; i < 5; i++) {
-    if (danger_columns[i] > max_danger_value) {
-      max_danger_value = danger_columns[i];
-      max_danger_index = i;
-    }
-  }
+ switch (navigation_state){
+     case SAFE:
+     if (!InsideObstacleZone(stateGetPositionEnu_f()->x + 0.4* sinf(stateGetNedToBodyEulers_f()->psi), 
+             stateGetPositionEnu_f()->y + 0.4 * cosf(stateGetNedToBodyEulers_f()->psi))){
+         navigation_state = OUT_OF_BOUNDS;
+       } else {
+         guidance_h_set_body_vel(speed_sp, 0);
+       }
+       
+		 // Find the highest danger column
+	  int max_danger_index = 0;
+	  float max_danger_value = danger_columns[0];
+	  for (int i = 1; i < 5; i++) {
+	    if (danger_columns[i] > max_danger_value) {
+	      max_danger_value = danger_columns[i];
+	      max_danger_index = i;
+	    }
+	  }
 
-  // Determine heading direction based on the most dangerous side
-  if (max_danger_index < 2) {
-    // Danger is more on the left, turn right
-    avoidance_heading_direction = oag_heading_rate;
-  } else if (max_danger_index > 2) {
-    // Danger is more on the right, turn left
-    avoidance_heading_direction = -oag_heading_rate;
-  } else {
-    // Danger is in the center, stop and turn in place
-    avoidance_heading_direction = oag_heading_rate;
-  }
-  
-  guidance_h_set_body_vel(speed_sp, 0);
-  guidance_h_set_heading_rate(avoidance_heading_direction * RadOfDeg(15));
+	  // Determine heading direction based on the most dangerous side
+	  if (max_danger_index < 2) {
+	    // Danger is more on the left, turn right
+	    avoidance_heading_direction = oag_heading_rate;
+	  } else if (max_danger_index > 2) {
+	    // Danger is more on the right, turn left
+	    avoidance_heading_direction = -oag_heading_rate;
+	  } else {
+	    // Danger is in the center, stop and turn in place
+	    avoidance_heading_direction = oag_heading_rate;
+	  }
+	  
+	  guidance_h_set_body_vel(speed_sp, 0);
+	  guidance_h_set_heading_rate(avoidance_heading_direction * RadOfDeg(60));
 
-  return;
+       break;
+     case SEARCH_FOR_SAFE_HEADING:
+         navigation_state = SAFE;
+       break;
+     case OUT_OF_BOUNDS:
+       // stop
+       guidance_h_set_body_vel(0, 0);
+
+       // start turn back into arena
+       guidance_h_set_heading_rate(avoidance_heading_direction * RadOfDeg(15));
+
+
+
+       navigation_state = REENTER_ARENA;
+
+       debug_print("x: %f, %f, y:%f, %f", stateGetPositionEnu_f()->x, sinf(stateGetNedToBodyEulers_f()->psi), stateGetPositionEnu_f()->y, cosf(stateGetNedToBodyEulers_f()->psi));
+       break;
+     case REENTER_ARENA:
+
+       // force floor center to opposite side of turn to head back into arena
+       if (InsideObstacleZone(stateGetPositionEnu_f()->x + 1 * sinf(stateGetNedToBodyEulers_f()->psi), 
+                               stateGetPositionEnu_f()->y + 1 * cosf(stateGetNedToBodyEulers_f()->psi))){
+         // return to heading mode
+         guidance_h_set_heading(stateGetNedToBodyEulers_f()->psi);
+
+         // reset safe counter
+         obstacle_free_confidence = 0;
+
+         // ensure direction is safe before continuing
+         navigation_state = SAFE;
+       }
+       break;
+     default:
+       break;
+}
+return;
 }
 
