@@ -131,7 +131,7 @@ bool obstacle_detection_init(void) {
     }
 
     // Register video callback before stream init
-    video_listener = cv_add_to_device(&OBSTACLE_DETECTION_CAMERA, video_callback, 0, 0); // 0,0 means full FPS, cam id 0
+    video_listener = cv_add_to_device(&OBSTACLE_DETECTION_CAMERA, video_callback, 10, 0); // 0,0 means full FPS, cam id 0
     if (video_listener == NULL) {
         debug_print("[Obstacle Detection] Failed to register video callback\n");
         pthread_mutex_destroy(&frame_mutex);
