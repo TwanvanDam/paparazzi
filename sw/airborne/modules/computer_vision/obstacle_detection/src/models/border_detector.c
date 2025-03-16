@@ -25,6 +25,10 @@
 #else
 #define FUNC_PREFIX static inline
 #endif
+enum DebugLevel current_debug_level = DEBUG_NONE;
+
+int frame_counter = 0;
+
 
 static const float tensor_model_conv1_weight[4][3][3][3] = 
 {
@@ -724,115 +728,163 @@ static union tensor_union_2 tu2;
  * Operand:           MaxPool
  * Name in ONNX file: /model/initial_pool/MaxPool
  */
-FUNC_PREFIX void node__model_initial_pool_MaxPool( const float x[1][3][240][240], float y[1][3][120][120] )
-{
-	/* MaxPool
-	 *
-	 * auto_pad: NOTSET
-	 * dilations: 1 1 
-	 * group: 1
-	 * kernel_shape: 2 2 
-	 * pads: 0 0 0 0 
-	 * strides: 2 2 
-	 */
-	for( uint32_t b=0; b<1; b++ ) {
-	for( uint32_t m=0, c=0; m<3; m++, c=m) {
-		for( int32_t o0=0, i0=0; o0<120; o0++, i0+=2) {
-		for( int32_t o1=0, i1=0; o1<120; o1++, i1+=2) {
-			float curmax = -FLT_MAX;
-			for( uint32_t k0=0; k0<2; k0++ ) {
-			for( uint32_t k1=0; k1<2; k1++ ) {
-				int ii0 = i0+k0 * 1;
-				if( ii0<0) continue;
-				if( ii0>=240) continue;
-				int ii1 = i1+k1 * 1;
-				if( ii1<0) continue;
-				if( ii1>=240) continue;
-				if( curmax < x[b][c][ii0][ii1]) {
-				curmax = MAX( curmax, x[b][c][ii0][ii1]);
-				}
-			} /* k */
-			} /* k */
-			y[b][m][o0][o1]= curmax;
-		} /* o */
-		} /* o */
-	} /* m */
-	} /* b */
+FUNC_PREFIX void node__model_initial_pool_MaxPool(const float x[1][3][240][240], float y[1][3][120][120]) {
+  // Original MaxPool implementation
+  for(uint32_t b = 0; b < 1; b++) {
+      for(uint32_t m = 0, c = 0; m < 3; m++, c = m) {
+          for(int32_t o0 = 0, i0 = 0; o0 < 120; o0++, i0 += 2) {
+              for(int32_t o1 = 0, i1 = 0; o1 < 120; o1++, i1 += 2) {
+                  float curmax = -FLT_MAX;
+                  for(uint32_t k0 = 0; k0 < 2; k0++) {
+                      for(uint32_t k1 = 0; k1 < 2; k1++) {
+                          int ii0 = i0 + k0 * 1;
+                          if(ii0 < 0) continue;
+                          if(ii0 >= 240) continue;
+                          int ii1 = i1 + k1 * 1;
+                          if(ii1 < 0) continue;
+                          if(ii1 >= 240) continue;
+                          curmax = MAX(curmax, x[b][c][ii0][ii1]);
+                      }
+                  }
+                  y[b][m][o0][o1] = curmax;
+              }
+          }
+      }
+  }
+
+  // Debug output for critical period
+  if (frame_counter >= 300 && frame_counter <= 400 && current_debug_level >= DEBUG_MODERATE) {
+      float stats[3][3] = {0}; // min, max, avg for each channel
+      for (int c = 0; c < 3; c++) {
+          stats[c][0] = FLT_MAX;  // min
+          stats[c][1] = -FLT_MAX; // max
+          float sum = 0;
+          for (int i = 0; i < 120*120; i++) {
+              float val = ((float*)y)[c*120*120 + i];
+              stats[c][0] = fmin(stats[c][0], val);
+              stats[c][1] = fmax(stats[c][1], val);
+              sum += val;
+          }
+          stats[c][2] = sum / (120*120); // avg
+      }
+      printf("[Frame %d] MaxPool output stats:\n", frame_counter);
+      for (int c = 0; c < 3; c++) {
+          printf("  Ch%d - avg: %.6f, range: [%.6f, %.6f]\n",
+              c, stats[c][2], stats[c][0], stats[c][1]);
+      }
+  }
 }
 
 /*
  * Operand:           Conv
  * Name in ONNX file: /model/conv1/Conv
  */
-FUNC_PREFIX void node__model_conv1_Conv( const float x[1][3][120][120], const float w[4][3][3][3], const float bias[4], float y[1][4][60][60] )
-{
-	/* Conv
-	 *
-	 * auto_pad: NOTSET
-	 * dilations: 1 1 
-	 * group: 1
-	 * kernel_shape: 3 3 
-	 * pads: 1 1 1 1 
-	 * strides: 2 2 
-	 */
-	for( uint32_t b=0; b<1; b++ ) {
-	for( uint32_t m=0; m<4; m++) {
-		for( int32_t o0=0, i0=-1; o0<60; o0++, i0+=2) {
-		for( int32_t o1=0, i1=-1; o1<60; o1++, i1+=2) {
-			y[b][m][o0][o1] = bias[m];
-			for( int32_t c=0; c<3; c++ ) {
-			for( uint32_t k0=0; k0<3; k0++ ) {
-			for( uint32_t k1=0; k1<3; k1++ ) {
-				int ii0 = i0+k0 * 1;
-				if( ii0<0) continue;
-				if( ii0>=120) continue;
-				int ii1 = i1+k1 * 1;
-				if( ii1<0) continue;
-				if( ii1>=120) continue;
-				y[b][m][o0][o1] += x[b][c][ii0][ii1] *w[m][c][k0][k1];
-			} /* k */
-			} /* k */
-			} /* c */
-		} /* o */
-		} /* o */
-	} /* m */
-	} /* b */
+FUNC_PREFIX void node__model_conv1_Conv(const float x[1][3][120][120], 
+  const float w[4][3][3][3], const float bias[4], float y[1][4][60][60]) {
+  
+  // Original implementation
+  for(uint32_t b = 0; b < 1; b++) {
+      for(uint32_t m = 0; m < 4; m++) {
+          for(int32_t o0 = 0, i0 = -1; o0 < 60; o0++, i0 += 2) {
+              for(int32_t o1 = 0, i1 = -1; o1 < 60; o1++, i1 += 2) {
+                  y[b][m][o0][o1] = bias[m];
+                  for(int32_t c = 0; c < 3; c++) {
+                      for(uint32_t k0 = 0; k0 < 3; k0++) {
+                          for(uint32_t k1 = 0; k1 < 3; k1++) {
+                              int ii0 = i0+k0 * 1;
+                              if(ii0 < 0) continue;
+                              if(ii0 >= 120) continue;
+                              int ii1 = i1+k1 * 1;
+                              if(ii1 < 0) continue;
+                              if(ii1 >= 120) continue;
+                              y[b][m][o0][o1] += x[b][c][ii0][ii1] * w[m][c][k0][k1];
+                          }
+                      }
+                  }
+              }
+          }
+      }
+  }
+
+  // Debug output for critical period
+  if (frame_counter >= 300 && frame_counter <= 400 && current_debug_level >= DEBUG_MODERATE) {
+      float sum = 0, max_val = -FLT_MAX, min_val = FLT_MAX;
+      for(int m = 0; m < 4; m++) {
+          for(int i = 0; i < 60*60; i++) {
+              float val = ((float*)y)[m*60*60 + i];
+              sum += val;
+              max_val = fmax(max_val, val);
+              min_val = fmin(min_val, val);
+          }
+      }
+      printf("[Frame %d] Conv1 stats - avg: %.6f, range: [%.6f, %.6f]\n",
+          frame_counter, sum/(4*60*60), min_val, max_val);
+  }
 }
 
 /*
  * Operand:           InstanceNormalization
  * Name in ONNX file: /model/in1/InstanceNormalization
  */
-FUNC_PREFIX void node__model_in1_InstanceNormalization( const float input[1][4][60][60], const float scale[4], const float B[4], float output[1][4][60][60] )
-{
-	/* InstanceNormalization
-	 */
+FUNC_PREFIX void node__model_in1_InstanceNormalization(const float input[1][4][60][60], 
+  const float scale[4], const float B[4], float output[1][4][60][60]) {
+  
+  float epsilon = 9.9999997473787516356e-06;
+  
+  // Debug statistics for critical period
+  if (frame_counter >= 300 && frame_counter <= 400 && current_debug_level >= DEBUG_MODERATE) {
+      float channel_stats[4][3] = {0}; // min, max, mean for each channel
+      for (int c = 0; c < 4; c++) {
+          channel_stats[c][0] = FLT_MAX;  // min
+          channel_stats[c][1] = -FLT_MAX; // max
+          float sum = 0;
+          for (int i = 0; i < 60*60; i++) {
+              float val = ((float*)input)[c*60*60 + i];
+              channel_stats[c][0] = fmin(channel_stats[c][0], val);
+              channel_stats[c][1] = fmax(channel_stats[c][1], val);
+              sum += val;
+          }
+          channel_stats[c][2] = sum / (60*60);
+      }
+      if (current_debug_level >= DEBUG_VERBOSE) {
+          printf("[Frame %d] IN1 pre-norm stats:\n", frame_counter);
+          for (int c = 0; c < 4; c++) {
+              printf("  Ch%d - avg: %.6f, range: [%.6f, %.6f]\n",
+                  c, channel_stats[c][2], channel_stats[c][0], channel_stats[c][1]);
+          }
+      }
+  }
 
-	float epsilon = 9.9999997473787516356e-06;
-	for( int32_t b=0; b<1; b++ ) {
-	for( int32_t c=0; c<4; c++ ) {
+  // Original implementation
+  for(int32_t b = 0; b < 1; b++) {
+      for(int32_t c = 0; c < 4; c++) {
+          float mean = 0;
+          float sqmean = 0;
+          for(uint32_t i2 = 0; i2 < 60; i2++) {
+              for(uint32_t i3 = 0; i3 < 60; i3++) {
+                  float d = input[b][c][i2][i3];
+                  mean += d;
+                  sqmean += d*d;
+              }
+          }
+          mean /= 3600;
+          sqmean /= 3600;
+          float var = sqmean - mean*mean;
 
-		float mean =  0;
-		float sqmean =  0;
-		for( uint32_t i2=0; i2<60; i2++ ) {
-		for( uint32_t i3=0; i3<60; i3++ ) {
-			float d = input[b][c][i2][i3];
-			mean += d;
-			sqmean += d*d;
-		}
-		}
-		mean /= 3600;
-		sqmean /= 3600;
-		float var = sqmean - mean*mean;
-
-		for( uint32_t i2=0; i2<60; i2++ ) {
-		for( uint32_t i3=0; i3<60; i3++ ) {
-			float d = input[b][c][i2][i3];
-			output[b][c][i2][i3] = scale[c] * (d-mean) / sqrt(var + epsilon) + B[c];
-		}
-		}
-	}
-	}
+          for(uint32_t i2 = 0; i2 < 60; i2++) {
+              for(uint32_t i3 = 0; i3 < 60; i3++) {
+                  float d = input[b][c][i2][i3];
+                  output[b][c][i2][i3] = scale[c] * (d-mean) / sqrt(var + epsilon) + B[c];
+              }
+          }
+          
+          if (frame_counter >= 300 && frame_counter <= 400 && 
+              current_debug_level >= DEBUG_VERBOSE) {
+              printf("[Frame %d] IN1 ch%d norm params - mean: %.6f, var: %.6f, scale: %.6f, bias: %.6f\n",
+                  frame_counter, c, mean, var, scale[c], B[c]);
+          }
+      }
+  }
 }
 
 /*
@@ -893,36 +945,56 @@ FUNC_PREFIX void node__model_conv2_Conv( const float x[1][4][60][60], const floa
  * Operand:           InstanceNormalization
  * Name in ONNX file: /model/in2/InstanceNormalization
  */
-FUNC_PREFIX void node__model_in2_InstanceNormalization( const float input[1][8][30][30], const float scale[8], const float B[8], float output[1][8][30][30] )
-{
-	/* InstanceNormalization
-	 */
+FUNC_PREFIX void node__model_in2_InstanceNormalization(const float input[1][8][30][30], 
+  const float scale[8], const float B[8], float output[1][8][30][30]) {
+  
+  float epsilon = 9.9999997473787516356e-06;
+  
+  if (frame_counter >= 300 && frame_counter <= 400 && current_debug_level >= DEBUG_MODERATE) {
+      float total_mean = 0, total_var = 0;
+      for(int c = 0; c < 8; c++) {
+          float mean = 0, sqmean = 0;
+          for(uint32_t i2 = 0; i2 < 30; i2++) {
+              for(uint32_t i3 = 0; i3 < 30; i3++) {
+                  float d = input[0][c][i2][i3];
+                  mean += d;
+                  sqmean += d*d;
+              }
+          }
+          mean /= 900;
+          sqmean /= 900;
+          float var = sqmean - mean*mean;
+          total_mean += mean;
+          total_var += var;
+      }
+      printf("[Frame %d] IN2 pre-norm - avg_mean: %.6f, avg_var: %.6f\n",
+          frame_counter, total_mean/8, total_var/8);
+  }
 
-	float epsilon = 9.9999997473787516356e-06;
-	for( int32_t b=0; b<1; b++ ) {
-	for( int32_t c=0; c<8; c++ ) {
+  // Original implementation
+  for(int32_t b = 0; b < 1; b++) {
+      for(int32_t c = 0; c < 8; c++) {
+          float mean = 0;
+          float sqmean = 0;
+          for(uint32_t i2 = 0; i2 < 30; i2++) {
+              for(uint32_t i3 = 0; i3 < 30; i3++) {
+                  float d = input[b][c][i2][i3];
+                  mean += d;
+                  sqmean += d*d;
+              }
+          }
+          mean /= 900;
+          sqmean /= 900;
+          float var = sqmean - mean*mean;
 
-		float mean =  0;
-		float sqmean =  0;
-		for( uint32_t i2=0; i2<30; i2++ ) {
-		for( uint32_t i3=0; i3<30; i3++ ) {
-			float d = input[b][c][i2][i3];
-			mean += d;
-			sqmean += d*d;
-		}
-		}
-		mean /= 900;
-		sqmean /= 900;
-		float var = sqmean - mean*mean;
-
-		for( uint32_t i2=0; i2<30; i2++ ) {
-		for( uint32_t i3=0; i3<30; i3++ ) {
-			float d = input[b][c][i2][i3];
-			output[b][c][i2][i3] = scale[c] * (d-mean) / sqrt(var + epsilon) + B[c];
-		}
-		}
-	}
-	}
+          for(uint32_t i2 = 0; i2 < 30; i2++) {
+              for(uint32_t i3 = 0; i3 < 30; i3++) {
+                  float d = input[b][c][i2][i3];
+                  output[b][c][i2][i3] = scale[c] * (d-mean) / sqrt(var + epsilon) + B[c];
+              }
+          }
+      }
+  }
 }
 
 /*
@@ -983,36 +1055,56 @@ FUNC_PREFIX void node__model_conv3_Conv( const float x[1][8][30][30], const floa
  * Operand:           InstanceNormalization
  * Name in ONNX file: /model/in3/InstanceNormalization
  */
-FUNC_PREFIX void node__model_in3_InstanceNormalization( const float input[1][8][15][15], const float scale[8], const float B[8], float output[1][8][15][15] )
-{
-	/* InstanceNormalization
-	 */
+FUNC_PREFIX void node__model_in3_InstanceNormalization(const float input[1][8][15][15], 
+  const float scale[8], const float B[8], float output[1][8][15][15]) {
+  
+  float epsilon = 9.9999997473787516356e-06;
+  
+  if (frame_counter >= 300 && frame_counter <= 400 && current_debug_level >= DEBUG_MODERATE) {
+      float total_mean = 0, total_var = 0;
+      for(int c = 0; c < 8; c++) {
+          float mean = 0, sqmean = 0;
+          for(uint32_t i2 = 0; i2 < 15; i2++) {
+              for(uint32_t i3 = 0; i3 < 15; i3++) {
+                  float d = input[0][c][i2][i3];
+                  mean += d;
+                  sqmean += d*d;
+              }
+          }
+          mean /= 225;
+          sqmean /= 225;
+          float var = sqmean - mean*mean;
+          total_mean += mean;
+          total_var += var;
+      }
+      printf("[Frame %d] IN3 pre-norm - avg_mean: %.6f, avg_var: %.6f\n",
+          frame_counter, total_mean/8, total_var/8);
+  }
 
-	float epsilon = 9.9999997473787516356e-06;
-	for( int32_t b=0; b<1; b++ ) {
-	for( int32_t c=0; c<8; c++ ) {
+  // Original implementation
+  for(int32_t b = 0; b < 1; b++) {
+      for(int32_t c = 0; c < 8; c++) {
+          float mean = 0;
+          float sqmean = 0;
+          for(uint32_t i2 = 0; i2 < 15; i2++) {
+              for(uint32_t i3 = 0; i3 < 15; i3++) {
+                  float d = input[b][c][i2][i3];
+                  mean += d;
+                  sqmean += d*d;
+              }
+          }
+          mean /= 225;
+          sqmean /= 225;
+          float var = sqmean - mean*mean;
 
-		float mean =  0;
-		float sqmean =  0;
-		for( uint32_t i2=0; i2<15; i2++ ) {
-		for( uint32_t i3=0; i3<15; i3++ ) {
-			float d = input[b][c][i2][i3];
-			mean += d;
-			sqmean += d*d;
-		}
-		}
-		mean /= 225;
-		sqmean /= 225;
-		float var = sqmean - mean*mean;
-
-		for( uint32_t i2=0; i2<15; i2++ ) {
-		for( uint32_t i3=0; i3<15; i3++ ) {
-			float d = input[b][c][i2][i3];
-			output[b][c][i2][i3] = scale[c] * (d-mean) / sqrt(var + epsilon) + B[c];
-		}
-		}
-	}
-	}
+          for(uint32_t i2 = 0; i2 < 15; i2++) {
+              for(uint32_t i3 = 0; i3 < 15; i3++) {
+                  float d = input[b][c][i2][i3];
+                  output[b][c][i2][i3] = scale[c] * (d-mean) / sqrt(var + epsilon) + B[c];
+              }
+          }
+      }
+  }
 }
 
 /*
@@ -1048,31 +1140,41 @@ FUNC_PREFIX void node__model_classifier_classifier_0_Flatten( const float input[
  * Operand:           Gemm
  * Name in ONNX file: /model/classifier/classifier.1/Gemm
  */
-FUNC_PREFIX void node__model_classifier_classifier_1_Gemm( const float A[1][1800], const float B[32][1800], const float C[32], float Y[1][32] )
-{
-	/* Gemm */
-	/* alpha   = 1.0000000000000000000
-	   beta    = 1.0000000000000000000
-	   transA  = 0
-	   transB  = 1
-	 */
-	const int M = 1;
-	const int K = 1800;
-	const int N = 32;
-	float alpha = 1.0000000000000000000;
-	float beta = 1.0000000000000000000;
-	float (*C_)[32]  = (float(*)[32])C;
-	for( uint32_t r=0; r<M; r++ )
-		for( uint32_t c=0; c<N; c++ ) {
-			float ABrc = 0;
-			for( uint32_t i=0; i<K; i++ ) {
-				float B_el = B[c][i];
-				ABrc += A[r][i] * B_el;
-			}
-			float tmp = ABrc * alpha;
-			tmp += C_[0][c] * beta;
-			Y[r][c] = tmp;
-	}
+FUNC_PREFIX void node__model_classifier_classifier_1_Gemm(const float A[1][1800], 
+  const float B[32][1800], const float C[32], float Y[1][32]) {
+  
+  // Original implementation
+  const int M = 1;
+  const int K = 1800;
+  const int N = 32;
+  float alpha = 1.0000000000000000000;
+  float beta = 1.0000000000000000000;
+  float (*C_)[32] = (float(*)[32])C;
+  
+  for(uint32_t r = 0; r < M; r++) {
+      for(uint32_t c = 0; c < N; c++) {
+          float ABrc = 0;
+          for(uint32_t i = 0; i < K; i++) {
+              float B_el = B[c][i];
+              ABrc += A[r][i] * B_el;
+          }
+          float tmp = ABrc * alpha;
+          tmp += C_[0][c] * beta;
+          Y[r][c] = tmp;
+      }
+  }
+
+  // Debug output
+  if (frame_counter >= 300 && frame_counter <= 400 && current_debug_level >= DEBUG_MODERATE) {
+      float sum = 0, max_val = -FLT_MAX, min_val = FLT_MAX;
+      for(int i = 0; i < 32; i++) {
+          sum += Y[0][i];
+          max_val = fmax(max_val, Y[0][i]);
+          min_val = fmin(min_val, Y[0][i]);
+      }
+      printf("[Frame %d] Classifier features - avg: %.6f, range: [%.6f, %.6f]\n",
+          frame_counter, sum/32, min_val, max_val);
+  }
 }
 
 /*
@@ -1386,10 +1488,36 @@ FUNC_PREFIX void node__model_classifier_classifier_6_Sigmoid( const float X[1][1
 }
 
 
-void entry(const float tensor_input[1][3][240][240], float tensor_output[1][1]){
-	node__model_initial_pool_MaxPool( tensor_input, tu0.tensor__model_initial_pool_MaxPool_output_0);
-	node__model_conv1_Conv( tu0.tensor__model_initial_pool_MaxPool_output_0, tensor_model_conv1_weight, tensor_model_conv1_bias, tu1.tensor__model_conv1_Conv_output_0);
-	node__model_in1_InstanceNormalization( tu1.tensor__model_conv1_Conv_output_0, tensor_model_in1_weight, tensor_model_in1_bias, tu0.tensor__model_in1_InstanceNormalization_output_0);
+void entry(const float tensor_input[1][3][240][240], float tensor_output[1][1]) {
+  frame_counter++;
+  bool is_critical = (frame_counter >= 300 && frame_counter <= 400);
+  float pre_sigmoid;
+
+  if (is_critical) {
+      printf("[Frame %d] Input first values: %.6f %.6f %.6f\n",
+          frame_counter,
+          tensor_input[0][0][0][0],
+          tensor_input[0][1][0][0],
+          tensor_input[0][2][0][0]);
+  }
+
+  node__model_initial_pool_MaxPool(tensor_input, tu0.tensor__model_initial_pool_MaxPool_output_0);
+  
+  if (is_critical) {
+      printf("[Frame %d] After MaxPool: %.6f %.6f %.6f\n",
+          frame_counter,
+          tu0.tensor__model_initial_pool_MaxPool_output_0[0][0][0][0],
+          tu0.tensor__model_initial_pool_MaxPool_output_0[0][1][0][0],
+          tu0.tensor__model_initial_pool_MaxPool_output_0[0][2][0][0]);
+  }
+
+  node__model_conv1_Conv(tu0.tensor__model_initial_pool_MaxPool_output_0, 
+      tensor_model_conv1_weight, tensor_model_conv1_bias, 
+      tu1.tensor__model_conv1_Conv_output_0);
+
+  node__model_in1_InstanceNormalization(tu1.tensor__model_conv1_Conv_output_0, 
+      tensor_model_in1_weight, tensor_model_in1_bias, 
+      tu0.tensor__model_in1_InstanceNormalization_output_0);
 	node__model_relu_Relu( tu0.tensor__model_in1_InstanceNormalization_output_0, tu1.tensor__model_relu_Relu_output_0);
 	node__model_conv2_Conv( tu1.tensor__model_relu_Relu_output_0, tensor_model_conv2_weight, tensor_model_conv2_bias, tu0.tensor__model_conv2_Conv_output_0);
 	node__model_in2_InstanceNormalization( tu0.tensor__model_conv2_Conv_output_0, tensor_model_in2_weight, tensor_model_in2_bias, tu1.tensor__model_in2_InstanceNormalization_output_0);
@@ -1411,6 +1539,22 @@ void entry(const float tensor_input[1][3][240][240], float tensor_output[1][1]){
 	node__model_classifier_classifier_2_Mul( tu0.tensor__model_classifier_classifier_2_Div_output_0, tensor_model_classifier_2_weight, tu1.tensor__model_classifier_classifier_2_Mul_output_0);
 	node__model_classifier_classifier_2_Add_1( tu1.tensor__model_classifier_classifier_2_Mul_output_0, tensor_model_classifier_2_bias, tu0.tensor__model_classifier_classifier_2_Add_1_output_0);
 	node__model_classifier_classifier_3_Relu( tu0.tensor__model_classifier_classifier_2_Add_1_output_0, tu1.tensor__model_classifier_classifier_3_Relu_output_0);
-	node__model_classifier_classifier_5_Gemm( tu1.tensor__model_classifier_classifier_3_Relu_output_0, tensor_model_classifier_5_weight, tensor_model_classifier_5_bias, tu0.tensor__model_classifier_classifier_5_Gemm_output_0);
-	node__model_classifier_classifier_6_Sigmoid( tu0.tensor__model_classifier_classifier_5_Gemm_output_0, tensor_output);
+  node__model_classifier_classifier_5_Gemm(
+    tu1.tensor__model_classifier_classifier_3_Relu_output_0, 
+    tensor_model_classifier_5_weight, tensor_model_classifier_5_bias, 
+    tu0.tensor__model_classifier_classifier_5_Gemm_output_0);
+
+if (is_critical) {
+    pre_sigmoid = tu0.tensor__model_classifier_classifier_5_Gemm_output_0[0][0];
+    printf("[Frame %d] Pre-sigmoid: %.6f\n", frame_counter, pre_sigmoid);
+}
+
+node__model_classifier_classifier_6_Sigmoid(
+    tu0.tensor__model_classifier_classifier_5_Gemm_output_0, tensor_output);
+
+if (is_critical) {
+    printf("[Frame %d] Final output: %.6f (delta: %.6f)\n", 
+        frame_counter, tensor_output[0][0],
+        tensor_output[0][0] - pre_sigmoid);
+}
 }

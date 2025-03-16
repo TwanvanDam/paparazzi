@@ -72,23 +72,6 @@ struct camera_data_t bottom_camera_data = {0};
 static struct video_listener* front_video_listener = NULL;
 static struct video_listener* bottom_video_listener = NULL;
 
-// void validate_camera_data(struct camera_data_t* data, const char* context) {
-//     // Don't try to check mutex state if we're already in a locked section
-//     bool check_mutex = (context && strstr(context, "Pre-initialization") != NULL);
-    
-//     debug_print("%s - Structure validation:", context);
-//     debug_print("  Initialized: %d", data->initialized);
-//     debug_print("  Frame: %p", (void*)data->frame);
-//     debug_print("  Frame ready: %d", data->frame_ready);
-//     debug_print("  RGB buffer: %p", data->rgb_buffer);
-//     debug_print("  RGB buffer size: %zu", data->rgb_buffer_size);
-    
-//     // Only check mutex state during initial validation
-//     if (check_mutex) {
-//         debug_print("  Frame mutex state: %d", pthread_mutex_trylock(&data->frame_mutex) == EBUSY);
-//     }
-// }
-
 void calculate_checksum(const void* data, size_t size, uint32_t* checksum) {
     const uint8_t* bytes = (const uint8_t*)data;
     *checksum = 0;
@@ -168,58 +151,6 @@ struct image_t* front_camera_callback(struct image_t *img, uint8_t camera_id) {
     return NULL;
 }
 
-// struct image_t* bottom_camera_callback(struct image_t *img, uint8_t camera_id) {
-//     struct timespec callback_start;
-//     clock_gettime(CLOCK_MONOTONIC, &callback_start);
-    
-//     if (!img || !img->buf) {
-//         debug_print("Bottom camera: Invalid image received");
-//         return NULL;
-//     }
-    
-//     pthread_mutex_lock(&bottom_camera_data.frame_mutex);
-    
-//     // Set frame not ready while we process
-//     bottom_camera_data.frame_ready = false;
-    
-//     // Track thread and timing
-//     bottom_camera_data.last_callback_thread = pthread_self();
-//     bottom_camera_data.last_callback_time = callback_start;
-//     bottom_camera_data.callback_count++;
-
-//     // Track memory state before allocation
-//     void* old_frame_addr = bottom_camera_data.frame ? bottom_camera_data.frame->buf : NULL;
-    
-//     if (bottom_camera_data.frame == NULL) {
-//         debug_print("Bottom camera: Creating new frame buffer");
-//         bottom_camera_data.frame = malloc(sizeof(struct image_t));
-//         image_create(bottom_camera_data.frame, img->w, img->h, img->type);
-//     }
-    
-//     // Track memory changes
-//     if (bottom_camera_data.frame->buf != old_frame_addr) {
-//         debug_print("Frame buffer address changed: %p -> %p", 
-//             old_frame_addr, bottom_camera_data.frame->buf);
-//     }
-    
-//     image_copy(img, bottom_camera_data.frame);
-//     bottom_camera_data.frame_ready = true;
-//     bottom_camera_data.last_frame_addr = bottom_camera_data.frame->buf;
-//     bottom_camera_data.last_frame_size = bottom_camera_data.frame->buf_size;
-    
-//     struct timespec callback_end;
-//     clock_gettime(CLOCK_MONOTONIC, &callback_end);
-//     double callback_duration = (callback_end.tv_sec - callback_start.tv_sec) +
-//                              (callback_end.tv_nsec - callback_start.tv_nsec) / 1e9;
-    
-//     if (callback_duration > 0.1) {  // Log unusually long callbacks
-//         debug_print("Long callback duration: %.6f seconds", callback_duration);
-//     }
-    
-//     pthread_mutex_unlock(&bottom_camera_data.frame_mutex);
-//     return NULL;
-// }
-
 struct image_t* bottom_camera_callback(struct image_t *img, uint8_t camera_id) {
     struct timespec callback_start;
     clock_gettime(CLOCK_MONOTONIC, &callback_start);
@@ -231,28 +162,39 @@ struct image_t* bottom_camera_callback(struct image_t *img, uint8_t camera_id) {
     
     pthread_mutex_lock(&bottom_camera_data.frame_mutex);
     
-    // Update thread and timing info
+    // Track thread and timing
     bottom_camera_data.last_callback_thread = pthread_self();
     bottom_camera_data.last_callback_time = callback_start;
     bottom_camera_data.callback_count++;
-    bottom_camera_data.frames_received++;
 
-    // Track last frame time for FPS calculation
-    gettimeofday(&bottom_camera_data.last_frame_received_time, NULL);
-
-    // Allocate frame if needed
+    // Track memory state before allocation
+    void* old_frame_addr = bottom_camera_data.frame ? bottom_camera_data.frame->buf : NULL;
+    
     if (bottom_camera_data.frame == NULL) {
+        debug_print("Bottom camera: Creating new frame buffer");
         bottom_camera_data.frame = malloc(sizeof(struct image_t));
         image_create(bottom_camera_data.frame, img->w, img->h, img->type);
     }
     
-    // Copy new frame data
+    // Track memory changes
+    if (bottom_camera_data.frame->buf != old_frame_addr) {
+        debug_print("Frame buffer address changed: %p -> %p", 
+            old_frame_addr, bottom_camera_data.frame->buf);
+    }
+    
     image_copy(img, bottom_camera_data.frame);
+    bottom_camera_data.frame_ready = true;
     bottom_camera_data.last_frame_addr = bottom_camera_data.frame->buf;
     bottom_camera_data.last_frame_size = bottom_camera_data.frame->buf_size;
     
-    // Mark frame as ready only after successful copy
-    bottom_camera_data.frame_ready = true;
+    struct timespec callback_end;
+    clock_gettime(CLOCK_MONOTONIC, &callback_end);
+    double callback_duration = (callback_end.tv_sec - callback_start.tv_sec) +
+                             (callback_end.tv_nsec - callback_start.tv_nsec) / 1e9;
+    
+    if (callback_duration > 0.1) {  // Log unusually long callbacks
+        debug_print("Long callback duration: %.6f seconds", callback_duration);
+    }
     
     pthread_mutex_unlock(&bottom_camera_data.frame_mutex);
     return NULL;
@@ -434,13 +376,7 @@ static void save_rgb_image(const float* r_data, const float* g_data, const float
 bool obstacle_detection_init(void) {
     debug_print("Initializing obstacle detection...");
     
-    // Initialize mutex first
-    if (pthread_mutex_init(&bottom_camera_data.frame_mutex, NULL) != 0) {
-        debug_print("Failed to initialize mutex");
-        return false;
-    }
-    
-    // Clear all state (after mutex init)
+    // Clear all state
     memset(&bottom_camera_data, 0, sizeof(bottom_camera_data));
     
     // Initialize RGB buffer
@@ -449,59 +385,38 @@ bool obstacle_detection_init(void) {
     
     if (!bottom_camera_data.rgb_buffer) {
         debug_print("Failed to allocate RGB buffer");
-        pthread_mutex_destroy(&bottom_camera_data.frame_mutex);
         return false;
     }
     
-    debug_print("RGB buffer allocated: %p with size %zu", 
-        bottom_camera_data.rgb_buffer,
-        bottom_camera_data.rgb_buffer_size);
+    debug_print("RGB buffer allocated: %zu bytes", bottom_camera_data.rgb_buffer_size);
+    
+    if (pthread_mutex_init(&bottom_camera_data.frame_mutex, NULL) != 0) {
+        debug_print("Failed to initialize mutex");
+        return false;
+    }
     
     // Initialize YUV conversion
     if (!init_yuv_conversion()) {
         debug_print("Failed to initialize YUV conversion");
-        free(bottom_camera_data.rgb_buffer);
-        pthread_mutex_destroy(&bottom_camera_data.frame_mutex);
         return false;
     }
 
-    // Initialize stream context
-    memset(&bottom_camera_data.stream_ctx, 0, sizeof(struct stream_context_t));
-    bottom_camera_data.stream_ctx.img_jpeg = (struct image_t){
-        .buf = NULL,
-        .buf_size = 0,
-        .w = 0,
-        .h = 0,
-        .type = IMAGE_JPEG
-    };
-
-    // Initialize stream
-    if (!init_stream(&bottom_camera_data.stream_ctx, "127.0.0.1", OBSTACLE_BOTTOM_RTP_PORT)) {
-        debug_print("Failed to initialize video stream");
-        free(bottom_camera_data.rgb_buffer);
-        pthread_mutex_destroy(&bottom_camera_data.frame_mutex);
-        return false;
-    }
-
-    // Register video callback
+    // Register video callbacks with debug prints
     debug_print("Registering video callbacks...");
+    front_video_listener = cv_add_to_device(&OBSTACLE_DETECTION_FRONT_CAMERA, 
+                                          front_camera_callback, 10, 0);
     bottom_video_listener = cv_add_to_device(&OBSTACLE_DETECTION_BOTTOM_CAMERA, 
                                            bottom_camera_callback, 10, 0);
     
-    if (bottom_video_listener == NULL) {
-        debug_print("Failed to register video callback");
-        free(bottom_camera_data.rgb_buffer);
-        pthread_mutex_destroy(&bottom_camera_data.frame_mutex);
+    if (front_video_listener == NULL || bottom_video_listener == NULL) {
+        debug_print("Failed to register video callbacks");
+        debug_print("Front listener: %p", (void*)front_video_listener);
+        debug_print("Bottom listener: %p", (void*)bottom_video_listener);
         return false;
     }
-
+    
+    debug_print("Video callbacks registered successfully");
     bottom_camera_data.initialized = true;
-    
-    debug_print("Final state - RGB buffer: %p, size: %zu, initialized: %d",
-        bottom_camera_data.rgb_buffer,
-        bottom_camera_data.rgb_buffer_size,
-        bottom_camera_data.initialized);
-    
     debug_print("Initialization complete");
     return true;
 }
@@ -653,115 +568,57 @@ bool obstacle_detection_init(void) {
 //     }
 // }
 
-bool validate_rgb_buffer(struct camera_data_t* data) {
-    if (!data->rgb_buffer) {
-        debug_print("RGB buffer null!");
-        return false;
-    }
-    
-    if (data->rgb_buffer_size != 240 * 240 * 3 * sizeof(float)) {
-        debug_print("RGB buffer wrong size: %zu", data->rgb_buffer_size);
-        return false;
-    }
-    
-    return true;
-}
-
 
 
 void obstacle_detection_periodic(void) {
-    struct timespec periodic_start;
-    clock_gettime(CLOCK_MONOTONIC, &periodic_start);
-    
-    // Track RGB buffer address before processing
-    void* current_rgb_addr = bottom_camera_data.rgb_buffer;
-    
-    // Quick check before lock
-    if (!bottom_camera_data.initialized ||
-        !bottom_camera_data.rgb_buffer || 
-        bottom_camera_data.rgb_buffer_size == 0) {
-        return;
-    }
-
     pthread_mutex_lock(&bottom_camera_data.frame_mutex);
     
-    // Frame validation after lock
     if (!bottom_camera_data.frame || !bottom_camera_data.frame_ready) {
         pthread_mutex_unlock(&bottom_camera_data.frame_mutex);
         return;
     }
     
-    // Convert YUV to RGB
-    bool conversion_ok = convert_uyvy_to_rgb_bottom(
-        bottom_camera_data.frame->buf,
-        bottom_camera_data.frame->w,
-        bottom_camera_data.frame->h,
-        bottom_camera_data.rgb_buffer,
-        bottom_camera_data.rgb_buffer_size
-    );
-    
-    if (!conversion_ok) {
+    // Validate RGB buffer
+    if (!bottom_camera_data.rgb_buffer) {
+        debug_print("RGB buffer not allocated");
         pthread_mutex_unlock(&bottom_camera_data.frame_mutex);
-        bottom_camera_data.error_count++;
         return;
     }
-
-    // Update buffer tracking - last_rgb_buffer_addr tracks allocation changes
-    if (current_rgb_addr != bottom_camera_data.last_rgb_buffer_addr) {
-        bottom_camera_data.last_rgb_buffer_addr = current_rgb_addr;
+    
+    // Convert YUV to RGB
+    if (!convert_uyvy_to_rgb_bottom(bottom_camera_data.frame->buf,
+                                  bottom_camera_data.frame->w,
+                                  bottom_camera_data.frame->h,
+                                  bottom_camera_data.rgb_buffer,
+                                  bottom_camera_data.rgb_buffer_size)) {
+        debug_print("YUV to RGB conversion failed");
+        pthread_mutex_unlock(&bottom_camera_data.frame_mutex);
+        return;
     }
     
-    // rgb_buffer_last_write tracks actual write position after conversion
-    bottom_camera_data.rgb_buffer_last_write = bottom_camera_data.rgb_buffer;
+    // Copy RGB data to input tensor with bounds checking
+    for(int h = 0; h < 240 && h < bottom_camera_data.frame->h; h++) {
+        for(int w = 0; w < 240 && w < bottom_camera_data.frame->w; w++) {
+            bottom_camera_data.input_tensor[0][0][h][w] = 
+                bottom_camera_data.rgb_buffer[h * 240 + w];
+            bottom_camera_data.input_tensor[0][1][h][w] = 
+                bottom_camera_data.rgb_buffer[240*240 + h * 240 + w];
+            bottom_camera_data.input_tensor[0][2][h][w] = 
+                bottom_camera_data.rgb_buffer[2*240*240 + h * 240 + w];
+        }
+    }
     
-    calculate_checksum(bottom_camera_data.rgb_buffer, 
-                      bottom_camera_data.rgb_buffer_size, 
-                      &bottom_camera_data.rgb_buffer_checksum);
-    
-    // Clear ready flag before running inference
-    bottom_camera_data.frame_ready = false;
-    
-    pthread_mutex_unlock(&bottom_camera_data.frame_mutex);
-
-    // Run inference after releasing mutex
+    // Run inference with input tensor
     struct border_output_t border_output = {0};
     bool inference_success = run_border_inference(
-        (const float*)bottom_camera_data.rgb_buffer,
+        (const float*)bottom_camera_data.input_tensor,
         240, 240,
         &border_output
     );
-
-    // Update timing stats
-    struct timespec periodic_end;
-    clock_gettime(CLOCK_MONOTONIC, &periodic_end);
-    double processing_time = (periodic_end.tv_sec - periodic_start.tv_sec) +
-                           (periodic_end.tv_nsec - periodic_start.tv_nsec) / 1e9;
     
-    bottom_camera_data.avg_processing_time = 
-        (bottom_camera_data.avg_processing_time * bottom_camera_data.frames_processed +
-         processing_time) / (bottom_camera_data.frames_processed + 1);
-    bottom_camera_data.max_processing_time = 
-        fmax(bottom_camera_data.max_processing_time, processing_time);
-
     if (inference_success) {
         float current_result = border_output.value;
         float prev_result = bottom_camera_data.last_inference_result;
-        float change = fabs(current_result - prev_result);
-        
-        // Monitor critical period (frames 300-400)
-        if (bottom_camera_data.frames_processed >= 300 && 
-            bottom_camera_data.frames_processed <= 400 && bottom_camera_data.frames_processed % 10 == 0) {
-            debug_print("\nFrame %d Stats:", bottom_camera_data.frames_processed);
-            debug_print("  Result: %.6f (Δ: %.6f)", current_result, change);
-            debug_print("  Threads - Callback: %lu, Inference: %lu",
-                bottom_camera_data.last_callback_thread,
-                bottom_camera_data.last_inference_thread);
-            debug_print("  Processing time: %.6f s (avg: %.6f s)",
-                processing_time, bottom_camera_data.avg_processing_time);
-            debug_print("  Memory - Frame: %p, RGB: %p",
-                bottom_camera_data.last_frame_addr,
-                bottom_camera_data.last_rgb_buffer_addr);
-        }
         
         // Update statistics
         if (bottom_camera_data.frames_processed == 0) {
@@ -812,16 +669,6 @@ void obstacle_detection_periodic(void) {
             debug_print("Changes: %d (%.2f%% of frames)", 
                 bottom_camera_data.significant_changes,
                 (float)bottom_camera_data.significant_changes / 100.0f * 100.0f);
-            debug_print("\nFrame %d Stats:", bottom_camera_data.frames_processed);
-            debug_print("  Result: %.6f (Δ: %.6f)", current_result, change);
-            debug_print("  Threads - Callback: %lu, Inference: %lu",
-                bottom_camera_data.last_callback_thread,
-                bottom_camera_data.last_inference_thread);
-            debug_print("  Processing time: %.6f s (avg: %.6f s)",
-                processing_time, bottom_camera_data.avg_processing_time);
-            debug_print("  Memory - Frame: %p, RGB: %p",
-                bottom_camera_data.last_frame_addr,
-                bottom_camera_data.last_rgb_buffer_addr);
             
             // Reset for next window
             bottom_camera_data.summary_counter = 0;
@@ -839,7 +686,6 @@ void obstacle_detection_periodic(void) {
     
     bottom_camera_data.frames_processed++;
     bottom_camera_data.frame_ready = false;
-    bottom_camera_data.last_inference_time = periodic_end;
     
     pthread_mutex_unlock(&bottom_camera_data.frame_mutex);
 }
@@ -848,7 +694,6 @@ void obstacle_detection_periodic(void) {
 void obstacle_detection_cleanup(void) {
     // Free RGB buffers
     free(front_camera_data.rgb_buffer);
-    debug_print("RGB buffer freed: %p", bottom_camera_data.rgb_buffer);
     free(bottom_camera_data.rgb_buffer);
     front_camera_data.rgb_buffer = NULL;
     bottom_camera_data.rgb_buffer = NULL;

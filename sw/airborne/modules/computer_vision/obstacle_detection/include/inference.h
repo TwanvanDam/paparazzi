@@ -28,15 +28,14 @@ bool run_obstacle_inference(const float* rgb_data,
                           struct model_output_t* output);
 
 // Run inference for border detection
-// bool run_border_inference(const float* rgb_data, 
-//                          int width,
-//                          int height,
-//                          struct border_output_t* output);
+bool run_border_inference(const float* rgb_data, 
+    int width,
+    int height,
+    struct border_output_t* output);
 
-void clip_tensor_values(float* tensor, size_t size, float min_val, float max_val);
-void normalize_input_tensor(float* tensor, int width, int height, int channels);
-void normalize_intermediate_tensor(float* tensor, int size);
-bool run_border_inference(const float* rgb_data, int width, int height, struct border_output_t* output);
+// void clip_tensor_values(float* tensor, size_t size, float min_val, float max_val);
+// void normalize_input_tensor(float* tensor, int width, int height, int channels);
+// void normalize_intermediate_tensor(float* tensor, int size);
 
 // Cleanup inference resources
 void cleanup_inference(void);
