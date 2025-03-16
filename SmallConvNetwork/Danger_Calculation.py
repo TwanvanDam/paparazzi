@@ -48,9 +48,10 @@ def danger_level(x1, x2, y1, y2, label, min_danger=0.0):
 
     # Plant
     if label == 1: # Plant
-        width_distance = rel_width / 0.2
-        height_distance = rel_height / 0.6
-        danger = min(max([width_distance, height_distance]), 1)
+        area = rel_width*rel_height*8
+        #width_distance = rel_width / 0.4
+        #height_distance = rel_height / 0.7
+        danger = min(area, 1)
 
     # Pole or blocks
     if (label == 2) or (label == 3):

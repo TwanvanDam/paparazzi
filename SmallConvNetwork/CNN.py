@@ -1,11 +1,12 @@
 from Danger_Calculation import generate_danger_level_list, read_bboxes
 import numpy as np
+import cv2
 import glob
 import torch
 from torch.utils.data import Dataset, DataLoader
 import pytorch_lightning as pl
+from pytorch_lightning.callbacks import ModelCheckpoint
 import torchvision.io
-import albumentations as A
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 import matplotlib.animation as animation
@@ -19,61 +20,50 @@ class CustomImageDataset(Dataset):
         self.width = width
         self.height = height
         self.grid_lines = grid_lines
-        self.p = 0.2
-        self.transform = A.Compose(
-            [
-                A.RandomBrightnessContrast(p=self.p, brightness_limit=(-0.1,0.1), contrast_limit=(-0.1,0.1)),
-            ])
 
     def __len__(self):
         return len(self.image_paths)
 
     def __getitem__(self, idx):
-        image = torchvision.io.read_image(self.image_paths[idx]).float().cuda()
+        image = torchvision.io.read_image(self.image_paths[idx]).cpu()
         if image.shape[-2:] != (self.width, self.height):
             raise ValueError(f"Image shape {image.shape} of {self.image_paths[idx]} is not equal to the expected shape ({self.width}, {self.height})")
-        image_rotated = torch.rot90(image, k=1, dims=[1,2]).cpu().permute(1, 2, 0).numpy()/255
         bboxes = read_bboxes(self.label_paths[idx])
-        transformed = self.transform(image=image_rotated, bboxes=bboxes)
-        transformed_image = torch.rot90(torch.from_numpy(transformed["image"]).permute(2, 0, 1) * 255.0, k=3, dims=[1,2]).float()
-        transformed_labels = transformed["bboxes"]
+        transformed_image_yuv = torch.tensor(cv2.cvtColor(image.permute(1, 2, 0).numpy(), cv2.COLOR_RGB2YUV_Y422)).permute(2, 0, 1).float()
 
-        cell_danger_levels = torch.tensor(generate_danger_level_list(transformed_labels, self.grid_lines, self.width,
-                                                                     self.height)).float()
-        return transformed_image, cell_danger_levels
+        cell_danger_levels = torch.tensor(generate_danger_level_list(bboxes, self.grid_lines, self.width, self.height)).float()
+        return transformed_image_yuv, cell_danger_levels
 
 class ObjectDetectionModel(pl.LightningModule):
     def __init__(self, grid_lines):
         super(ObjectDetectionModel, self).__init__()
         self.grid_lines = grid_lines
 
+        # Convolution to downsample Y (H, W) → (H, W/2)
+        self.downsample_y = torch.nn.Conv2d(1, 1, kernel_size=(2, 1), stride=(2, 1))
+
         self.conv = torch.nn.Sequential(
-            torch.nn.MaxPool2d(4),
-
-            # input shape: 3x130x60
-            torch.nn.Conv2d(3, 16, 3, padding=1, stride=2),
+            #input shape: 3x520x120
+            torch.nn.BatchNorm2d(1),
+            torch.nn.Conv2d(1, 8, 5, padding=0, stride=3),
             torch.nn.ReLU(),
 
-            # input shape: 16x65x30
-            torch.nn.Conv2d(16, 64, 3, padding=1, stride=1),
-            torch.nn.ReLU(),
+            # input shape: 8x172x40
+            torch.nn.Conv2d(8, 16, 3, padding=1, stride=2),
             torch.nn.MaxPool2d(2),
-
-            # input shape: 64x33x15
-            torch.nn.Conv2d(64, 128, 3, padding=1, stride=2),
             torch.nn.ReLU(),
 
-            # input shape: 128x17x8
-            torch.nn.Conv2d(128, 32, 1, padding=0, stride=1),
-            torch.nn.ReLU(),
+            # input shape: 16x43x10
+            torch.nn.Conv2d(16, 32, 3, padding=1, stride=2),
             torch.nn.MaxPool2d(2),
-            #output shape: 32x8x4
+            torch.nn.ReLU(),
+            # output shape: 32x11x5
         )
 
         self.fc = torch.nn.Sequential(
-            torch.nn.Linear(32*8*4, 128),
+            torch.nn.Linear(960,128),
             torch.nn.ReLU(),
-
+            torch.nn.Dropout(0.3),
             torch.nn.Linear(128,len(grid_lines) - 1),
         )
         self.loss_fn = torch.nn.MSELoss()
@@ -84,8 +74,13 @@ class ObjectDetectionModel(pl.LightningModule):
         return x
 
     def forward(self, x):
-        x = x / 255
-        x = self.conv(x)
+        #U = x[:, 0:1, ::2, :]# Extract interleaved UV channel
+        #V = x[:, 0:1, 1::2, :]
+
+        xlim_left = int(self.grid_lines[0] * x.shape[2])
+        xlim_right = int(self.grid_lines[-1] * x.shape[2])
+        Y = x[:, 1:2, xlim_left:xlim_right, :]  # Extract Y channel
+        x = self.conv(Y)
         x = x.view(x.size(0),-1)
         x = self.fc(x)
         x = x.view(x.size(0), len(self.grid_lines) - 1)
@@ -159,29 +154,45 @@ if __name__ == "__main__":
     height = 240
 
     # This defines how wide the columns are
-    columns = [0, 0.2, 0.4, 0.6, 0.8, 1]
+    columns = [0.2, 0.4, 0.6, 0.8]
 
     # Option for running the file
-    train = True
+    train = False
     save_model = True
-    save_video = False
+    save_video = True
+
+    checkpoint_callback = ModelCheckpoint(
+        monitor='val_loss',         # metric to monitor
+        dirpath='checkpoints/',     # directory to save checkpoints
+        filename='model-{epoch:02d}-{val_loss:.4f}',  # checkpoint filename format
+        save_top_k=1,              # save only the best checkpoint
+        mode='min',                # minimize the monitored metric
+    )
+
+
 
     # fit the model
     if train:
         data_module = ObjectDetectionDataModule(image_dir_train, image_dir_val, width, height, columns)
+        #model = ObjectDetectionModel.load_from_checkpoint("lightning_logs/version_206/checkpoints/epoch=9-step=1090.ckpt", grid_lines=columns)
         model = ObjectDetectionModel(columns)
-        trainer = pl.Trainer(max_epochs=20, check_val_every_n_epoch=1, log_every_n_steps=10)
+        trainer = pl.Trainer(
+            max_epochs=20,
+            check_val_every_n_epoch=1,
+            log_every_n_steps=20,
+        )
         trainer.fit(model, data_module)
     # load a trained model
     else:
-        model = ObjectDetectionModel.load_from_checkpoint("lightning_logs/version_99/checkpoints/epoch=19-step=1120.ckpt", grid_lines=columns)
+        model = ObjectDetectionModel.load_from_checkpoint("lightning_logs/version_206/checkpoints/epoch=9-step=1090.ckpt", grid_lines=columns)
 
     # save the model to onnx
     if save_model:
-        model.to_onnx("./SmallConvNetwork/model_rgb_smaller.onnx", torch.randn(1, 3, width, height))
+        model.to_onnx("./SmallConvNetwork/model_yuv.onnx", torch.randn(1, 2, width, height))
 
     # plot a video to test the predictions
     model.to("cpu")
+    model.eval()
     torch.set_num_threads(1)
 
     # Use the images from this folder
@@ -194,10 +205,12 @@ if __name__ == "__main__":
         ax.clear()  # clear the axes for the new frame
         image = torchvision.io.read_image(image_paths[frame]).float()
 
+        image_model = torch.tensor(cv2.cvtColor(image.permute(1, 2, 0).numpy().astype(np.uint8), cv2.COLOR_RGB2YUV_Y422)).permute(2, 0, 1).float()
+
         # Record frame processing time
         start_frame = time.time()
-        frame_danger = model(image.unsqueeze(0)).squeeze(0)
-        print(f"{1 / (time.time() - start_frame):.1f} fps")
+        frame_danger = model(image_model.unsqueeze(0)).squeeze(0)
+        print(f"{(time.time() - start_frame)*1000:.3f} ms")
 
         # Call the plot_image function to update the plot
         plot_image(sample_image=image, sample_danger=frame_danger, grid_lines=columns, grid=False)
