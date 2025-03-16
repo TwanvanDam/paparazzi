@@ -40,12 +40,12 @@ class ObjectDetectionModel(pl.LightningModule):
         self.grid_lines = grid_lines
 
         # Convolution to downsample Y (H, W) → (H, W/2)
-        self.downsample_y = torch.nn.Conv2d(1, 1, kernel_size=(2, 1), stride=(2, 1))
+        #self.downsample_y = torch.nn.Conv2d(1, 1, kernel_size=(2, 1), stride=(2, 1))
 
         self.conv = torch.nn.Sequential(
             #input shape: 3x520x120
-            torch.nn.BatchNorm2d(1),
-            torch.nn.Conv2d(1, 8, 5, padding=0, stride=3),
+            torch.nn.BatchNorm2d(3),
+            torch.nn.Conv2d(3, 8, 5, padding=0, stride=3),
             torch.nn.ReLU(),
 
             # input shape: 8x172x40
@@ -61,7 +61,7 @@ class ObjectDetectionModel(pl.LightningModule):
         )
 
         self.fc = torch.nn.Sequential(
-            torch.nn.Linear(960,128),
+            torch.nn.Linear(384,128),
             torch.nn.ReLU(),
             torch.nn.Dropout(0.3),
             torch.nn.Linear(128,len(grid_lines) - 1),
@@ -74,13 +74,16 @@ class ObjectDetectionModel(pl.LightningModule):
         return x
 
     def forward(self, x):
-        #U = x[:, 0:1, ::2, :]# Extract interleaved UV channel
-        #V = x[:, 0:1, 1::2, :]
-
         xlim_left = int(self.grid_lines[0] * x.shape[2])
         xlim_right = int(self.grid_lines[-1] * x.shape[2])
-        Y = x[:, 1:2, xlim_left:xlim_right, :]  # Extract Y channel
-        x = self.conv(Y)
+
+        U = x[:, 0:1, xlim_left:xlim_right, ::2]
+        V = x[:, 0:1, xlim_left:xlim_right, 1::2]
+        Y1 = x[:, 1:2, xlim_left:xlim_right, ::2]  # Extract Y channel
+        Y2 = x[:, 1:2, xlim_left:xlim_right, 1::2]  # Extract Y channel
+
+        x = torch.concatenate([Y1+Y2, U, V], dim=1)
+        x = self.conv(x)
         x = x.view(x.size(0),-1)
         x = self.fc(x)
         x = x.view(x.size(0), len(self.grid_lines) - 1)
@@ -184,7 +187,7 @@ if __name__ == "__main__":
         trainer.fit(model, data_module)
     # load a trained model
     else:
-        model = ObjectDetectionModel.load_from_checkpoint("lightning_logs/version_206/checkpoints/epoch=9-step=1090.ckpt", grid_lines=columns)
+        model = ObjectDetectionModel.load_from_checkpoint("lightning_logs/version_219/checkpoints/epoch=19-step=2180.ckpt", grid_lines=columns)
 
     # save the model to onnx
     if save_model:
