@@ -70,7 +70,7 @@ model = ObjectDetectionModel.load_from_checkpoint("checkpoints/FastStrideMoreCha
 # save the model to onnx
 
 
-model.to_onnx("./SmallConvNetwork/model_small.onnx", torch.randn(1, 3, height, height))
+model.to_onnx("./SmallConvNetwork/model_small_clip.onnx", torch.randn(1, 3, height, height))
 
 # plot a video to test the predictions
 model.to("cpu")

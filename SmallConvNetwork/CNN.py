@@ -84,7 +84,7 @@ class ObjectDetectionModel(pl.LightningModule):
         x = x.view(x.size(0),-1)
         x = self.fc(x)
         x = x.view(x.size(0), len(self.grid_lines) - 1)
-        x = self.custom_relu(x)
+        x = torch.clip(x, 0.0, 1.0)
         return x
 
     def training_step(self, batch, batch_idx):
