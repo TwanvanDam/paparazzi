@@ -1,0 +1,272 @@
+/*
+ * Copyright (C) Kirk Scheper <kirkscheper@gmail.com>
+ *
+ * This file is part of paparazzi
+ *
+ */
+/**
+ * @file "modules/orange_avoider/orange_avoider_guided.c"
+ * @author Kirk Scheper
+ * This module is an example module for the course AE4317 Autonomous Flight of Micro Air Vehicles at the TU Delft.
+ * This module is used in combination with a color filter (cv_detect_color_object) and the guided mode of the autopilot.
+ * The avoidance strategy is to simply count the total number of orange pixels. When above a certain percentage threshold,
+ * (given by color_count_frac) we assume that there is an obstacle and we turn.
+ *
+ * The color filter settings are set using the cv_detect_color_object. This module can run multiple filters simultaneously
+ * so you have to define which filter to use with the ORANGE_AVOIDER_VISUAL_DETECTION_ID setting.
+ * This module differs from the simpler orange_avoider.xml in that this is flown in guided mode. This flight mode is
+ * less dependent on a global positioning estimate as witht the navigation mode. This module can be used with a simple
+ * speed estimate rather than a global position.
+ *
+ * Here we also need to use our onboard sensors to stay inside of the cyberzoo and not collide with the nets. For this
+ * we employ a simple color detector, similar to the orange poles but for green to detect the floor. When the total amount
+ * of green drops below a given threshold (given by floor_count_frac) we assume we are near the edge of the zoo and turn
+ * around. The color detection is done by the cv_detect_color_object module, use the FLOOR_VISUAL_DETECTION_ID setting to
+ * define which filter to use.
+ */
+
+ #include "avoider.h"
+ #include "firmwares/rotorcraft/guidance/guidance_h.h"
+ #include "generated/airframe.h"
+  #include "generated/flight_plan.h"
+ #include "state.h"
+ #include "modules/core/abi.h"
+ #include <stdio.h>
+ #include <time.h>
+ 
+ #define DEBUG_TAG "AVOIDER"
+ #define MAX_LOG_LENGTH 256
+ 
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <stdarg.h>
+ 
+ #ifndef MODELDATA_LISTENER_H
+ #define MODELDATA_LISTENER_H
+ 
+ void register_modeldata_listener(void);  // Function declaration
+ 
+ #endif  // MODELDATA_LISTENER_H
+ 
+ float danger_columns[5] = {0, 0, 0, 0, 0};
+ int N_columns = 5;
+ int mid_column = 2;
+ 
+ enum navigation_state_t {
+   SAFE,
+   OBSTACLE_FOUND,
+   OBSTACLE_NEARBY,
+   SEARCH_FOR_SAFE_HEADING,
+   OUT_OF_BOUNDS,
+   REENTER_ARENA,
+   AVOIDING_NEARBY_OBSTACLE
+ };
+ 
+ static void debug_print(const char* format, ...) {
+     char message[MAX_LOG_LENGTH];
+     va_list args;
+     va_start(args, format);
+     
+     #ifdef TARGET_AP
+         // On actual drone, use ulogger
+         vsnprintf(message, sizeof(message), format, args);
+         char command[MAX_LOG_LENGTH + 32];
+         snprintf(command, sizeof(command), "ulogger -t %s '%s'", DEBUG_TAG, message);
+         system(command);
+     #else
+         // In simulation (NPS/Gazebo), use printf
+         printf("[%s] ", DEBUG_TAG);
+         vprintf(format, args);
+         printf("\n");
+         fflush(stdout);
+     #endif
+     
+     va_end(args);
+ }
+ 
+ // define and initialise global variables
+ enum navigation_state_t navigation_state = SEARCH_FOR_SAFE_HEADING;   // current state in state machine
+ int32_t color_count = 0;                // orange color count from color filter for obstacle detection
+ int32_t floor_count = 0;                // green color count from color filter for floor detection
+ int32_t floor_centroid = 0;             // floor detector centroid in y direction (along the horizon)
+ float avoidance_heading_direction = 0;  // heading change direction for avoidance [rad/s]
+ int16_t obstacle_free_confidence = 0;   // a measure of how certain we are that the way ahead if safe.
+ float oag_max_speed = 0.5f;               // max flight speed [m/s]
+ float oag_heading_rate = RadOfDeg(60.f);
+ 
+ float stop_boundary_value = 0.5f;  // distance from boundary to stop and turn [m]
+ bool opti_track_boundary = true;              // use optitrack for boundary detection
+ float stop_obstacle_value = 0.9f;  // danger from obstacle to stop and turn
+ float straight_obstacle_value = 0.2f;  // danger from obstacle to go straight
+ float turn_boundary_value = 1f;  // danger from boundary to turn
+ 
+ 
+ const int16_t max_trajectory_confidence = 5;  // number of consecutive negative object detections to be sure we are obstacle free
+ 
+ 
+ // Callback function
+ void modeldata_message_handler(uint8_t sender_id, float v1, float v2, float v3, float v4, float v5) {
+     debug_print("\nReceived MODELDATA message from sender %d: %f, %f, %f, %f, %f\n", 
+            sender_id, v1, v2, v3, v4, v5);
+     danger_columns[0] = v1;
+     danger_columns[1] = v2;
+     danger_columns[2] = v3;
+     danger_columns[3] = v4;
+     danger_columns[4] = v5;
+ }
+ 
+ // Function to register listener
+ void register_modeldata_listener(void) {
+     static abi_event modeldata_event;
+     AbiBindMsgMODELDATA(38, &modeldata_event, modeldata_message_handler);
+ }
+ 
+ /*
+  * Initialisation function
+  */
+ void orange_avoider_guided_init(void)
+ {
+  register_modeldata_listener();
+  debug_print("Alles staat ready!");
+ }
+ 
+ /*
+  * Function that checks it is safe to move forwards, and then sets a forward velocity setpoint or changes the heading
+  */
+ void orange_avoider_guided_periodic(void)
+ {
+   if (guidance_h.mode != GUIDANCE_H_MODE_GUIDED) {
+     navigation_state = SEARCH_FOR_SAFE_HEADING;
+     return;
+   }
+ 
+   float speed_sp = oag_max_speed;
+ 
+  switch (navigation_state){
+      case SAFE:
+      if (opti_track_boundary and !InsideObstacleZone(stateGetPositionEnu_f()->x + stop_obstacle_value * speed_sp * sinf(stateGetNedToBodyEulers_f()->psi), 
+              stateGetPositionEnu_f()->y + stop_obstacle_value * speed_sp * cosf(stateGetNedToBodyEulers_f()->psi))){
+          navigation_state = OUT_OF_BOUNDS;
+        } else {
+          guidance_h_set_body_vel(speed_sp, 0);
+        }
+       
+      // Find the highest danger column
+     int max_danger_index = 0;
+     float max_danger_value = danger_columns[0];
+     float min_danger_value = danger_columns[0];
+     for (int i = 1; i < N_columns; i++) {
+       if (danger_columns[i] > max_danger_value) {
+         max_danger_value = danger_columns[i];
+         max_danger_index = i;
+       }
+       else if (danger_columns[i] < min_danger_value) {
+         min_danger_value = danger_columns[i];
+       }
+     }
+ 
+     // If the highest danger column is above a certain threshold, stop and turn
+     if (max_danger_value > stop_obstacle_value) {
+       navigation_state = OBSTACLE_NEARBY;
+     }
+ 
+     // To navigate there is checked it obstacles or a boundary is nearby
+     // Nearby obstacles are more important than the boundary
+ 
+     else if (min_danger_value < straight_obstacle_value) {
+       // check for boundary ...
+       if (opti_track_boundary and InsideObstacleZone(stateGetPositionEnu_f()->x + turn_boundary_value * speed_sp * sinf(stateGetNedToBodyEulers_f()->psi), 
+                               stateGetPositionEnu_f()->y + turn_boundary_value * speed_sp * cosf(stateGetNedToBodyEulers_f()->psi))){
+          // turn way from boundary, needs way to deside which way to turn
+          
+          avoidance_heading_direction = oag_heading_rate;
+       }
+       else {
+          avoidance_heading_direction = 0;
+       }
+ 
+     }
+     // Determine heading direction based on the most dangerous side
+     else if (max_danger_index < mid_column) {
+       // Danger is more on the left, turn right
+       avoidance_heading_direction = oag_heading_rate;
+     } else if (max_danger_index > mid_column) {
+       // Danger is more on the right, turn left
+       avoidance_heading_direction = -oag_heading_rate;
+     } else {
+       // Danger is more in middle, turn in the direction of the least danger
+       if(danger_columns[mid_column-1] > danger_columns[mid_column+1]){
+         avoidance_heading_direction = -oag_heading_rate;
+       } else {
+         avoidance_heading_direction = oag_heading_rate;
+       }
+     }
+     
+     guidance_h_set_body_vel(speed_sp, 0);
+     guidance_h_set_heading_rate(avoidance_heading_direction * RadOfDeg(60));
+ 
+        break;
+      case SEARCH_FOR_SAFE_HEADING:
+          navigation_state = SAFE;
+        break;
+      case OUT_OF_BOUNDS:
+        // stop
+        guidance_h_set_body_vel(0, 0);
+ 
+        // start turn back into arena
+        guidance_h_set_heading_rate(avoidance_heading_direction * RadOfDeg(60));
+ 
+ 
+ 
+        navigation_state = REENTER_ARENA;
+ 
+        debug_print("x: %f, %f, y:%f, %f", stateGetPositionEnu_f()->x, sinf(stateGetNedToBodyEulers_f()->psi), stateGetPositionEnu_f()->y, cosf(stateGetNedToBodyEulers_f()->psi));
+ 
+        break;
+       case OBSTACLE_NEARBY:
+        // stop
+        guidance_h_set_body_vel(0, 0);
+ 
+        // start turn back into arena
+        guidance_h_set_heading_rate(avoidance_heading_direction * RadOfDeg(60));
+ 
+        navigation_state = AVOIDING_NEARBY_OBSTACLE;
+ 
+        debug_print("column: %f, value:", max_danger_index, max_danger_value);
+        break;
+      case REENTER_ARENA:
+ 
+        // force floor center to opposite side of turn to head back into arena
+        if (InsideObstacleZone(stateGetPositionEnu_f()->x + 1 * sinf(stateGetNedToBodyEulers_f()->psi), 
+                                stateGetPositionEnu_f()->y + 1 * cosf(stateGetNedToBodyEulers_f()->psi))){
+          // return to heading mode
+          guidance_h_set_heading(stateGetNedToBodyEulers_f()->psi);
+ 
+          // ensure direction is safe before continuing
+          navigation_state = SAFE;
+        }
+        break;
+        case AVOIDING_NEARBY_OBSTACLE:
+ 
+         max_danger_index = 0;
+         max_danger_value = danger_columns[0];
+         for (int i = 1; i < 5; i++) {
+           if (danger_columns[i] > max_danger_value) {
+             max_danger_value = danger_columns[i];
+             max_danger_index = i;
+           }
+         }
+ 
+         if (max_danger_value < 0.9) {
+          guidance_h_set_heading(stateGetNedToBodyEulers_f()->psi);
+          // ensure direction is safe before continuing
+          navigation_state = SAFE;
+        }
+        break;
+      default:
+        break;
+ }
+ return;
+ }
+ 
+ 
