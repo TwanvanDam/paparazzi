@@ -1,5 +1,7 @@
 from Danger_Calculation import generate_danger_level_list, read_bboxes
 import numpy as np
+from torch.utils.data import DataLoader, Subset
+from sklearn.model_selection import KFold
 import cv2
 import glob
 import torch
@@ -11,12 +13,13 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 import matplotlib.animation as animation
 import time
-
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
+from Image_utils import read_jpg_to_yuv
 
 class CustomImageDataset(Dataset):
     def __init__(self, image_dir, width, height, grid_lines):
-        self.image_paths = sorted(glob.glob(image_dir + "/*.jpg"))
-        self.label_paths = sorted(glob.glob(image_dir.replace("images" , "labels") + "/*.txt"))
+        self.image_paths = sorted(glob.glob(image_dir + "/images/*.raw"))
+        self.label_paths = sorted(glob.glob(image_dir + "/labels/*.txt"))
         self.width = width
         self.height = height
         self.grid_lines = grid_lines
@@ -25,47 +28,50 @@ class CustomImageDataset(Dataset):
         return len(self.image_paths)
 
     def __getitem__(self, idx):
-        image = torchvision.io.read_image(self.image_paths[idx]).cpu()
-        if image.shape[-2:] != (self.width, self.height):
-            raise ValueError(f"Image shape {image.shape} of {self.image_paths[idx]} is not equal to the expected shape ({self.width}, {self.height})")
+        with open(self.image_paths[idx], 'rb') as f:
+            image = np.frombuffer(f.read(), dtype=np.float32).reshape((3,240, 240))
         bboxes = read_bboxes(self.label_paths[idx])
-        transformed_image_yuv = torch.tensor(cv2.cvtColor(image.permute(1, 2, 0).numpy(), cv2.COLOR_RGB2YUV_Y422)).permute(2, 0, 1).float()
 
         cell_danger_levels = torch.tensor(generate_danger_level_list(bboxes, self.grid_lines, self.width, self.height)).float()
-        return transformed_image_yuv, cell_danger_levels
+        return torch.tensor(image), cell_danger_levels
 
 class ObjectDetectionModel(pl.LightningModule):
-    def __init__(self, grid_lines):
+    def __init__(self, grid_lines, channels, kernel_size, padding, stride, pool_size, hidden_units, dropout, lr, width=520, heigth=240):
         super(ObjectDetectionModel, self).__init__()
+        self.save_hyperparameters()
+        self.lr = lr
+        self.verbose = True
         self.grid_lines = grid_lines
+        self.xlim_left = int(self.grid_lines[0] * width)
+        self.xlim_right = int(self.grid_lines[-1] * width)
 
-        # Convolution to downsample Y (H, W) → (H, W/2)
-        #self.downsample_y = torch.nn.Conv2d(1, 1, kernel_size=(2, 1), stride=(2, 1))
+        layers_conv = []
+        for i in range(len(channels)):
+            if i == 0:
+                layers_conv.append(torch.nn.Conv2d(3, channels[i], kernel_size[i], padding=padding[i], stride=stride[i]))
+            else:
+                layers_conv.append(torch.nn.Conv2d(channels[i - 1], channels[i], kernel_size[i], padding=padding[i], stride=stride[i]))
+            layers_conv.append(torch.nn.MaxPool2d(pool_size[i]))
+            layers_conv.append(torch.nn.ReLU())
 
-        self.conv = torch.nn.Sequential(
-            #input shape: 3x520x120
-            torch.nn.BatchNorm2d(3),
-            torch.nn.Conv2d(3, 8, 5, padding=0, stride=3),
-            torch.nn.ReLU(),
+        layers_fc = []
+        for i in range(len(hidden_units)):
+            if i == 0:
+                layers_fc.append(torch.nn.Linear(128,hidden_units[i]))
 
-            # input shape: 8x172x40
-            torch.nn.Conv2d(8, 16, 3, padding=1, stride=2),
-            torch.nn.MaxPool2d(2),
-            torch.nn.ReLU(),
+            else:
+                if len(hidden_units) > 1:
+                    layers_fc.append(torch.nn.Linear(hidden_units[i - 1], hidden_units[i]))
+            layers_fc.append(torch.nn.ReLU())
+            layers_fc.append(torch.nn.Dropout(dropout))
+            if i == len(hidden_units) - 1:
+                layers_fc.append(torch.nn.Linear(hidden_units[i], len(grid_lines)-1))
 
-            # input shape: 16x43x10
-            torch.nn.Conv2d(16, 32, 3, padding=1, stride=2),
-            torch.nn.MaxPool2d(2),
-            torch.nn.ReLU(),
-            # output shape: 32x11x5
-        )
 
-        self.fc = torch.nn.Sequential(
-            torch.nn.Linear(384,128),
-            torch.nn.ReLU(),
-            torch.nn.Dropout(0.3),
-            torch.nn.Linear(128,len(grid_lines) - 1),
-        )
+        self.conv = torch.nn.Sequential(*layers_conv)
+
+        self.fc = torch.nn.Sequential(*layers_fc)
+
         self.loss_fn = torch.nn.MSELoss()
 
     def custom_relu(self, x):
@@ -74,15 +80,6 @@ class ObjectDetectionModel(pl.LightningModule):
         return x
 
     def forward(self, x):
-        xlim_left = int(self.grid_lines[0] * x.shape[2])
-        xlim_right = int(self.grid_lines[-1] * x.shape[2])
-
-        U = x[:, 0:1, xlim_left:xlim_right, ::2]
-        V = x[:, 0:1, xlim_left:xlim_right, 1::2]
-        Y1 = x[:, 1:2, xlim_left:xlim_right, ::2]  # Extract Y channel
-        Y2 = x[:, 1:2, xlim_left:xlim_right, 1::2]  # Extract Y channel
-
-        x = torch.concatenate([Y1+Y2, U, V], dim=1)
         x = self.conv(x)
         x = x.view(x.size(0),-1)
         x = self.fc(x)
@@ -105,134 +102,126 @@ class ObjectDetectionModel(pl.LightningModule):
         return loss
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=0.0005)
+        return torch.optim.Adam(self.parameters(), lr=self.lr)
 
-class ObjectDetectionDataModule(pl.LightningDataModule):
-    def __init__(self, image_dir_train, image_dir_val, width, height, grid_lines, batch_size=8):
-        super(ObjectDetectionDataModule, self).__init__()
-        self.image_dir_train = image_dir_train
-        self.image_dir_val = image_dir_val
-        self.width = width
-        self.height = height
-        self.batch_size = batch_size
-        self.grid_lines = grid_lines
-
-    def setup(self, stage=None):
-        self.train_dataset = CustomImageDataset(self.image_dir_train, self.width, self.height, self.grid_lines)
-        self.val_dataset = CustomImageDataset(self.image_dir_val, self.width, self.height, self.grid_lines)
-
-    def train_dataloader(self):
-        return DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True)
-
-    def val_dataloader(self):
-        return DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=False)
-
-def plot_image(sample_image, sample_danger, grid_lines, grid=False):
-    colors = [(0, "green"), (0.5, "orange"), (1, "red")]
-    cmap = LinearSegmentedColormap.from_list("traffic_light", colors)
-
-    sample_danger = sample_danger.detach().numpy()
-
-    # Rotate image to display it correctly. Divide by 255 to scale pixel values to [0, 1].
-    plt.imshow(torch.rot90(sample_image.squeeze(0), k=1, dims=[1,2]).permute(1, 2, 0)/255)
-
-    # Overlay predicted danger levels.
-    for i in range(len(grid_lines) - 1):
-        plt.fill_between([grid_lines[i]*width, grid_lines[i + 1]*width],
-                         [0, 0],
-                         [height, height],
-                         color=cmap(sample_danger[i]), alpha=0.5)
-        plt.text((grid_lines[i]*width +grid_lines[i + 1]*width)/2 , height/2, f"{sample_danger[i]:.2f}", ha='center', va='center')
-
-
-    plt.xlim(0, width)
-    plt.ylim(height, 0)
 
 if __name__ == "__main__":
-    image_dir_train = "./SmallConvNetwork/dataset/images/train"
-    image_dir_val = "./SmallConvNetwork/dataset/images/val"
+    training_dir = "./SmallConvNetwork/dataset_raw"
 
     # these are the dimensions of the image when it is rotated by 90 degrees, so it is displayed correctly
     width = 520
     height = 240
 
-    # This defines how wide the columns are
-    columns = [0.2, 0.4, 0.6, 0.8]
-
     # Option for running the file
-    train = False
-    save_model = True
-    save_video = True
+    train = True
+    save_model = False
+    save_video = False
 
-    checkpoint_callback = ModelCheckpoint(
-        monitor='val_loss',         # metric to monitor
-        dirpath='checkpoints/',     # directory to save checkpoints
-        filename='model-{epoch:02d}-{val_loss:.4f}',  # checkpoint filename format
-        save_top_k=1,              # save only the best checkpoint
-        mode='min',                # minimize the monitored metric
-    )
+    # Parameters
+    n_splits = 5
+    batch_size = 8
+    max_epochs = 100
+    random_state = 42
+    num_tests = 100
 
+    # This defines how wide the columns are
+    columns = [140/520, 220/520, 300/520, 380/520]
 
+    configs = [
+        #  {"name" : "Baseline", "grid_lines": columns,"channels": [8, 16, 32],"kernel_size": [3, 3, 3],"padding": [1, 1, 1],
+        #           "stride": [2, 2, 2], "pool_size": [2, 2, 2],"hidden_units": [128],"dropout": 0.2, "lr" : 0.0001},
+        # {"name" : "Baseline more fc", "grid_lines": columns,"channels": [8, 16, 32],"kernel_size": [3, 3, 3],"padding": [1, 1, 1],
+        #  "stride": [2, 2, 2], "pool_size": [2, 2, 2],"hidden_units": [128,128],"dropout": 0.2, "lr" : 0.0001},
+        #  {"name" : "More Channels","grid_lines": columns,"channels": [8, 16, 64],"kernel_size": [3, 3, 3],"padding": [1, 1, 1],
+        #   "stride": [2, 1, 2], "pool_size": [2, 2, 2],"hidden_units": [128],"dropout": 0.1, "lr" : 0.0001},
+        #  {"name" : "Bigger kernel","grid_lines": columns,"channels": [8, 16, 16],"kernel_size": [5, 3, 3],"padding": [2, 1, 1],
+        #   "stride": [2, 1, 1], "pool_size": [2, 2, 2],"hidden_units": [128],"dropout": 0.1, "lr" : 0.0001},
+        # {"name": "Compact", "grid_lines": columns, "channels": [4, 8, 16], "kernel_size": [3, 3, 3], "padding": [1, 1, 1],
+        #  "stride": [2, 2, 2], "pool_size": [2, 2, 2], "hidden_units": [64], "dropout": 0.1, "lr": 0.0001},
+        #
+        # {"name": "Shallow", "grid_lines": columns, "channels": [8, 16], "kernel_size": [3, 3], "padding": [1, 1],
+        #  "stride": [2, 2], "pool_size": [2, 2], "hidden_units": [64], "dropout": 0.1, "lr": 0.0001},
+        #
+        # {"name": "Minimal", "grid_lines": columns, "channels": [4, 8], "kernel_size": [3, 3], "padding": [1, 1],
+        #  "stride": [2, 2], "pool_size": [2, 2], "hidden_units": [32], "dropout": 0.1, "lr": 0.0001},
 
-    # fit the model
-    if train:
-        data_module = ObjectDetectionDataModule(image_dir_train, image_dir_val, width, height, columns)
-        #model = ObjectDetectionModel.load_from_checkpoint("lightning_logs/version_206/checkpoints/epoch=9-step=1090.ckpt", grid_lines=columns)
-        model = ObjectDetectionModel(columns)
-        trainer = pl.Trainer(
-            max_epochs=20,
-            check_val_every_n_epoch=1,
-            log_every_n_steps=20,
-        )
-        trainer.fit(model, data_module)
-    # load a trained model
-    else:
-        model = ObjectDetectionModel.load_from_checkpoint("lightning_logs/version_219/checkpoints/epoch=19-step=2180.ckpt", grid_lines=columns)
+        # {"name": "FastStride", "grid_lines": columns, "channels": [8, 16, 16], "kernel_size": [3, 3, 3], "padding": [1, 1, 1],
+        #  "stride": [3, 2, 2], "pool_size": [2, 2, 2], "hidden_units": [64], "dropout": 0.1, "lr": 0.0001},
+        {"name": "FastStrideMoreChannels", "grid_lines": columns, "channels": [8, 16, 32], "kernel_size": [3, 3, 3], "padding": [1, 1, 1],
+         "stride": [3, 2, 2], "pool_size": [2, 2, 2], "hidden_units": [64], "dropout": 0.1, "lr": 0.0001},
+        # {"name": "FastStrideMoreMoreChannels", "grid_lines": columns, "channels": [8, 16, 64], "kernel_size": [3, 3, 3], "padding": [1, 1, 1],
+        #  "stride": [3, 2, 2], "pool_size": [2, 2, 2], "hidden_units": [64], "dropout": 0.1, "lr": 0.0001},
+        # {"name": "FastStrideBigKernel", "grid_lines": columns, "channels": [8, 16, 16], "kernel_size": [5, 3, 3], "padding": [1, 1, 1],
+        #  "stride": [3, 2, 2], "pool_size": [2, 2, 2], "hidden_units": [64], "dropout": 0.1, "lr": 0.0001},
 
-    # save the model to onnx
-    if save_model:
-        model.to_onnx("./SmallConvNetwork/model_yuv.onnx", torch.randn(1, 2, width, height))
+        # {"name": "TinyKernels", "grid_lines": columns, "channels": [8, 16, 16], "kernel_size": [1, 3, 1], "padding": [0, 1, 0],
+        #  "stride": [2, 2, 1], "pool_size": [2, 2, 2], "hidden_units": [64], "dropout": 0.1, "lr": 0.0001},
+    ]
 
-    # plot a video to test the predictions
-    model.to("cpu")
-    model.eval()
-    torch.set_num_threads(1)
+    full_dataset = CustomImageDataset(training_dir, width, height, columns)
+    half_dataset = CustomImageDataset(training_dir, width, height, columns)
 
-    # Use the images from this folder
-    test_images = './SmallConvNetwork/Test_video/*.jpg'
-    image_paths = sorted(glob.glob(test_images))
+    # Initialize KFold configuration
+    kfold = KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
 
-    fig, ax = plt.subplots()
+    # Store results for each fold
+    results = [{"name" : configs[i]["name"], "val_loss" : [], "epochs" : [], "inference" : []} for i in range(len(configs))]
 
-    def update(frame):
-        ax.clear()  # clear the axes for the new frame
-        image = torchvision.io.read_image(image_paths[frame]).float()
+    for i,config in enumerate(configs):
+        for fold, (train_idx, val_idx) in enumerate(kfold.split(np.arange(len(full_dataset)))):
+            print(f"Training fold {fold + 1}/{n_splits}")
 
-        image_model = torch.tensor(cv2.cvtColor(image.permute(1, 2, 0).numpy().astype(np.uint8), cv2.COLOR_RGB2YUV_Y422)).permute(2, 0, 1).float()
+            # Create subset datasets for training and validation
+            train_subset = Subset(full_dataset, train_idx)
+            val_subset = Subset(full_dataset, val_idx)
 
-        # Record frame processing time
-        start_frame = time.time()
-        frame_danger = model(image_model.unsqueeze(0)).squeeze(0)
-        print(f"{(time.time() - start_frame)*1000:.3f} ms")
+            checkpoint_callback = ModelCheckpoint(
+                monitor='val_loss',         # metric to monitor
+                dirpath='checkpoints/',     # directory to save checkpoints
+                filename=f'{config["name"]}fold{fold}'+ '-{epoch:02d}-{val_loss:.4f}',  # checkpoint filename format
+                save_top_k=1,              # save only the best checkpoint
+                mode='min',                # minimize the monitored metric
+            )
 
-        # Call the plot_image function to update the plot
-        plot_image(sample_image=image, sample_danger=frame_danger, grid_lines=columns, grid=False)
-        ax.set_xlim(0, width)
-        ax.set_ylim(height, 0)
-        return ax
+            # fit the model
 
-    # Make the animation
-    animation_fps = 10
-    ani = animation.FuncAnimation(fig, update, frames=len(image_paths), interval=1000/animation_fps)
+            print(f"Training model {i}")
+            print(f"Model configuration: {config}")
+            model = ObjectDetectionModel(grid_lines=config["grid_lines"], channels=config["channels"],
+                                         kernel_size=config["kernel_size"], padding=config["padding"],
+                                         stride=config["stride"], pool_size=config["pool_size"],
+                                         hidden_units=config["hidden_units"], dropout=config["dropout"], lr=config["lr"])
+            trainer = pl.Trainer(
+                max_epochs=max_epochs,
+                check_val_every_n_epoch=1,
+                enable_progress_bar=False,
+                callbacks=[checkpoint_callback, EarlyStopping(monitor="val_loss", mode="min", patience=5)],
+            )
+            # Run training for this fold
+            trainer.fit(model, DataLoader(train_subset, batch_size=batch_size), DataLoader(val_subset, batch_size=batch_size))
+            results[i]["val_loss"].append(checkpoint_callback.best_model_score.cpu().item())
+            results[i]["epochs"].append(trainer.current_epoch)
+            print("Epochs used: ", trainer.current_epoch)
+            print("Best Validation Loss:", checkpoint_callback.best_model_score)
 
-    if save_video:
-        # Save the animation to an MP4 file using ffmpeg writer
-        ani.save('./SmallConvNetwork/output.mp4', writer='ffmpeg', fps=animation_fps)
+            # test inference time:
+            print("Testing inference time")
+            start = time.time()
+            model.eval()
+            model.to("cpu")
+            torch.set_num_threads(1)
+            for n in range(num_tests):
+                sample_image = val_subset[n][0].unsqueeze(0)
+                output = model(sample_image)
+            results[i]["inference"].append((time.time() - start) *1000 / num_tests)
 
-    plt.show()
+        print(results[i])
 
-
-
+    for i, config in enumerate(configs):
+        print(f"Configuration: {config['name']}")
+        print(f"Validation Loss: {np.mean(results[i]['val_loss'])} +- {np.std(results[i]['val_loss'])}")
+        print(f"Epochs: {np.mean(results[i]['epochs'])} +- {np.std(results[i]['epochs'])}")
+        print(f"Inference time: {np.mean(results[i]['inference'])} ms +- {np.std(results[i]['inference'])}")
 
 
 
