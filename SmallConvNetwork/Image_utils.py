@@ -3,6 +3,8 @@ import cv2
 import matplotlib.pyplot as plt
 import time
 from pathlib import Path
+import glob
+import tqdm
 
 def jpeg_to_uyvy(jpg_path, target_width, target_height):
     """Convert JPEG to UYVY format"""
@@ -153,7 +155,8 @@ def adjust_brightness_contrast(image, brightness, contrast):
     image shape: (3, 240, 240) with values in [0,1]
     """
     # Only adjust Y channel (luminance)
-    y_channel = image[0].copy()
+    image = image.copy()
+    y_channel = image[0,:,:]
 
     # Apply contrast
     contrast_factor = (1 + contrast)
@@ -167,33 +170,31 @@ def adjust_brightness_contrast(image, brightness, contrast):
     y_channel = np.clip(y_channel, 0, 1)
 
     # Update Y channel
-    image[0] = y_channel
+    image[0,:,:] = y_channel
 
     return image
 
 def process_directory(jpg_dir, output_dir):
     """Process all JPEGs in a directory"""
     jpg_dir = Path(jpg_dir).resolve()
-    print(f"Processing JPEGs from: {jpg_dir}")
-    output_dir = Path(output_dir)
-    output_dir.mkdir(exist_ok=True)
+    #print(f"Processing JPEGs from: {jpg_dir}")
 
-    for jpg_file in jpg_dir.glob("*.jpg"):
+    for jpg_file in tqdm.tqdm(glob.glob(f"{jpg_dir}/*.jpg"), desc="Copying hand labeled images", unit="img"):
         yuv_data = read_jpg_to_yuv(str(jpg_file)).astype(np.float32)
-        print(yuv_data.shape)
+        stem = Path(jpg_file).stem
         if yuv_data is not None:
-            output_path = output_dir / (jpg_file.stem + '.raw')  # Changed to .raw
+            output_path = output_dir + "/" + stem + '.raw'  # Changed to .raw
             yuv_data.tofile(output_path)
-            print(f"Converted {jpg_file} to {output_path}")
+            #print(f"Converted {jpg_file} to {output_path}")
 
 if __name__ == "__main__":
     start = time.time()
-    image_path = "SmallConvNetwork/dataset/images/val/177250905.jpg"
-    yuv = read_jpg_to_yuv(image_path)
-    process_directory("./SmallConvNetwork/dataset/images/train", "./SmallConvNetwork/dataset_raw/images/train")
+    # image_path = "SmallConvNetwork/dataset/images/val/177250905.jpg"
+    # yuv = read_jpg_to_yuv(image_path)
+    process_directory("/home/twan/paparazzi/SmallConvNetwork/Test_video", "/home/twan/paparazzi/SmallConvNetwork/Test_video_raw")
     print(time.time()-start)
-    with open(image_path.replace(".jpg", ".raw").replace("dataset", "dataset_raw"), 'rb') as f:
-        yuv = np.frombuffer(f.read(), dtype=np.float32).reshape((3,240, 240))
+    with open(glob.glob("/home/twan/YOLO_dataset_generated/images_raw/*.raw")[0], 'rb') as f:
+         yuv = np.frombuffer(f.read(), dtype=np.float32).reshape((3,240, 240))
 
     plt.imshow(yuv[0,:,:], cmap='gray')
     plt.show()

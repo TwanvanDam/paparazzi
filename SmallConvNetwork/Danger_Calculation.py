@@ -61,13 +61,17 @@ def danger_level(x1, x2, y1, y2, label, min_danger=0.0):
 
     return max(min_danger, danger)
 
-def generate_danger_level_list(bboxes, grid_lines, width, height):
+def generate_danger_level_list(bboxes, grid_lines, augment_bboxes=True):
     danger_list = [0 for _ in range(len(grid_lines)-1)]
 
     # loop over all bboxes
     for i in range(bboxes.shape[0]):
         bbox = bboxes[i]
         x1, x2, y1, y2, label = convert_coordinates(bbox)
+        if augment_bboxes:
+            # augment the bbox to make sure boxes only exist within the grid
+            x1 = max(grid_lines[0], x1)
+            x2 = min(grid_lines[-1], x2)
 
         # calculate how dangerous given box is
         box_danger = danger_level(x1, x2, y1, y2, label)

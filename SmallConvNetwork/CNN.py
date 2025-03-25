@@ -1,24 +1,22 @@
+import matplotlib.pyplot as plt
+
 from Danger_Calculation import generate_danger_level_list, read_bboxes
 import numpy as np
 from torch.utils.data import DataLoader, Subset
 from sklearn.model_selection import KFold
-import cv2
 import glob
 import torch
 from torch.utils.data import Dataset, DataLoader
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
-import torchvision.io
-import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap
-import matplotlib.animation as animation
 import time
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
-from Image_utils import read_jpg_to_yuv
+import random
+from Image_utils import adjust_brightness_contrast
 
 class CustomImageDataset(Dataset):
     def __init__(self, image_dir, width, height, grid_lines):
-        self.image_paths = sorted(glob.glob(image_dir + "/images/*.raw"))
+        self.image_paths = sorted(glob.glob(image_dir + "/images_raw/*.raw"))
         self.label_paths = sorted(glob.glob(image_dir + "/labels/*.txt"))
         self.width = width
         self.height = height
@@ -31,12 +29,22 @@ class CustomImageDataset(Dataset):
         with open(self.image_paths[idx], 'rb') as f:
             image = np.frombuffer(f.read(), dtype=np.float32).reshape((3,240, 240))
         bboxes = read_bboxes(self.label_paths[idx])
+        cell_danger_levels = generate_danger_level_list(bboxes, self.grid_lines)
 
-        cell_danger_levels = torch.tensor(generate_danger_level_list(bboxes, self.grid_lines, self.width, self.height)).float()
-        return torch.tensor(image), cell_danger_levels
+        if random.random() < 0.1:
+            image = adjust_brightness_contrast(image, random.randint(-10, 10)/50, random.randint(-10, 10)/50)
+
+        image = torch.tensor(image).float()
+        # Add random flipping with probability 0.1
+        if random.random() < 0.1:
+            image = torch.flip(image, dims=[1])  # Flip over x-axis (horizontal)
+            cell_danger_levels = cell_danger_levels[::-1]  # Adjust danger levels accordingly
+
+
+        return image, torch.tensor(cell_danger_levels).float()
 
 class ObjectDetectionModel(pl.LightningModule):
-    def __init__(self, grid_lines, channels, kernel_size, padding, stride, pool_size, hidden_units, dropout, lr, width=520, heigth=240):
+    def __init__(self, grid_lines, channels, kernel_size, padding, stride, pool_size, hidden_units, dropout, lr, width=520, heigth=240, flip=True, brightness_contrast=True):
         super(ObjectDetectionModel, self).__init__()
         self.save_hyperparameters()
         self.lr = lr
@@ -106,7 +114,7 @@ class ObjectDetectionModel(pl.LightningModule):
 
 
 if __name__ == "__main__":
-    training_dir = "./SmallConvNetwork/dataset_raw"
+    training_dir = "/home/twan/YOLO_dataset_generated"
 
     # these are the dimensions of the image when it is rotated by 90 degrees, so it is displayed correctly
     width = 520
@@ -148,18 +156,33 @@ if __name__ == "__main__":
         # {"name": "FastStride", "grid_lines": columns, "channels": [8, 16, 16], "kernel_size": [3, 3, 3], "padding": [1, 1, 1],
         #  "stride": [3, 2, 2], "pool_size": [2, 2, 2], "hidden_units": [64], "dropout": 0.1, "lr": 0.0001},
         {"name": "FastStrideMoreChannels", "grid_lines": columns, "channels": [8, 16, 32], "kernel_size": [3, 3, 3], "padding": [1, 1, 1],
-         "stride": [3, 2, 2], "pool_size": [2, 2, 2], "hidden_units": [64], "dropout": 0.1, "lr": 0.0001},
+         "stride": [3, 2, 2], "pool_size": [2, 2, 2], "hidden_units": [128], "dropout": 0.1, "lr": 0.0001},
         # {"name": "FastStrideMoreMoreChannels", "grid_lines": columns, "channels": [8, 16, 64], "kernel_size": [3, 3, 3], "padding": [1, 1, 1],
         #  "stride": [3, 2, 2], "pool_size": [2, 2, 2], "hidden_units": [64], "dropout": 0.1, "lr": 0.0001},
-        # {"name": "FastStrideBigKernel", "grid_lines": columns, "channels": [8, 16, 16], "kernel_size": [5, 3, 3], "padding": [1, 1, 1],
-        #  "stride": [3, 2, 2], "pool_size": [2, 2, 2], "hidden_units": [64], "dropout": 0.1, "lr": 0.0001},
+        #{"name": "FastStrideBigKernel", "grid_lines": columns, "channels": [8, 16, 32], "kernel_size": [3, 5, 5], "padding": [1, 2, 2],
+        #  "stride": [3, 2, 2], "pool_size": [2, 2, 2], "hidden_units": [128], "dropout": 0.1, "lr": 0.0001},
 
         # {"name": "TinyKernels", "grid_lines": columns, "channels": [8, 16, 16], "kernel_size": [1, 3, 1], "padding": [0, 1, 0],
         #  "stride": [2, 2, 1], "pool_size": [2, 2, 2], "hidden_units": [64], "dropout": 0.1, "lr": 0.0001},
+        # {"name": "ExtendedModel", "grid_lines": columns, "channels": [8, 16, 32, 64], "kernel_size": [3, 3, 3, 3],
+        #  "padding": [1, 1, 1, 1], "stride": [2, 2, 2, 2], "pool_size": [2, 2, 2, 2],
+        #  "hidden_units": [128, 64], "dropout": 0.2, "lr": 0.00005},
+        #
+        # {"name": "ExtraDeep", "grid_lines": columns, "channels": [8, 16, 32, 64, 128], "kernel_size": [3, 3, 3, 3, 3],
+        #  "padding": [1, 1, 1, 1, 1], "stride": [2, 2, 2, 2, 2], "pool_size": [2, 2, 2, 2, 2],
+        #  "hidden_units": [256, 128, 64], "dropout": 0.3, "lr": 0.00005},
+        #
+        # {"name": "LiteModel", "grid_lines": columns, "channels": [4, 8, 16], "kernel_size": [3, 3, 3],
+        #  "padding": [1, 1, 1], "stride": [2, 2, 2], "pool_size": [2, 2, 2],
+        #  "hidden_units": [32], "dropout": 0.1, "lr": 0.0002},
     ]
 
+
     full_dataset = CustomImageDataset(training_dir, width, height, columns)
-    half_dataset = CustomImageDataset(training_dir, width, height, columns)
+    # for i in range(len(full_dataset)):
+    #     print(full_dataset[i][1])
+    #     plt.imshow(full_dataset[i][0][0,:,:], cmap='gray')
+    #     plt.show()
 
     # Initialize KFold configuration
     kfold = KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
@@ -178,7 +201,7 @@ if __name__ == "__main__":
             checkpoint_callback = ModelCheckpoint(
                 monitor='val_loss',         # metric to monitor
                 dirpath='checkpoints/',     # directory to save checkpoints
-                filename=f'{config["name"]}fold{fold}'+ '-{epoch:02d}-{val_loss:.4f}',  # checkpoint filename format
+                filename=f'{config["name"]}fold{fold}_synthethic'+ '-{epoch:02d}-{val_loss:.4f}',  # checkpoint filename format
                 save_top_k=1,              # save only the best checkpoint
                 mode='min',                # minimize the monitored metric
             )
@@ -190,11 +213,12 @@ if __name__ == "__main__":
             model = ObjectDetectionModel(grid_lines=config["grid_lines"], channels=config["channels"],
                                          kernel_size=config["kernel_size"], padding=config["padding"],
                                          stride=config["stride"], pool_size=config["pool_size"],
-                                         hidden_units=config["hidden_units"], dropout=config["dropout"], lr=config["lr"])
+                                         hidden_units=config["hidden_units"], dropout=config["dropout"], lr=config["lr"],
+                                         width=width, heigth=height, flip=True, brightness_contrast=True)
             trainer = pl.Trainer(
                 max_epochs=max_epochs,
                 check_val_every_n_epoch=1,
-                enable_progress_bar=False,
+                enable_progress_bar=True,
                 callbacks=[checkpoint_callback, EarlyStopping(monitor="val_loss", mode="min", patience=5)],
             )
             # Run training for this fold
@@ -222,6 +246,8 @@ if __name__ == "__main__":
         print(f"Validation Loss: {np.mean(results[i]['val_loss'])} +- {np.std(results[i]['val_loss'])}")
         print(f"Epochs: {np.mean(results[i]['epochs'])} +- {np.std(results[i]['epochs'])}")
         print(f"Inference time: {np.mean(results[i]['inference'])} ms +- {np.std(results[i]['inference'])}")
+
+
 
 
 

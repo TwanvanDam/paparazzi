@@ -5,7 +5,7 @@ import matplotlib.animation as animation
 import torch
 from CNN import ObjectDetectionModel
 import glob
-from Image_utils import read_jpg_to_yuv
+import numpy as np
 
 width = 520
 height = 240
@@ -36,9 +36,15 @@ configs = [
     {"name": "TinyKernels", "grid_lines": columns, "channels": [8, 16, 16], "kernel_size": [1, 3, 1], "padding": [0, 1, 0],
      "stride": [2, 2, 1], "pool_size": [2, 2, 2], "hidden_units": [64], "dropout": 0.1, "lr": 0.0001},
     {"name": "FastStrideMoreChannels", "grid_lines": columns, "channels": [8, 16, 32], "kernel_size": [3, 3, 3], "padding": [1, 1, 1],
-     "stride": [3, 2, 2], "pool_size": [2, 2, 2], "hidden_units": [64], "dropout": 0.1, "lr": 0.0001}
+     "stride": [3, 2, 2], "pool_size": [2, 2, 2], "hidden_units": [64], "dropout": 0.1, "lr": 0.0001},
+    {"name": "FastStrideMoreChannels", "grid_lines": columns, "channels": [8, 16, 32], "kernel_size": [3, 3, 3],
+     "padding": [1, 1, 1],
+     "stride": [3, 2, 2], "pool_size": [2, 2, 2], "hidden_units": [128], "dropout": 0.1, "lr": 0.0001},
+    {"name": "FastStrideBigKernel", "grid_lines": columns, "channels": [8, 16, 32], "kernel_size": [3, 5, 5],
+     "padding": [1, 2, 2],
+     "stride": [3, 2, 2], "pool_size": [2, 2, 2], "hidden_units": [128], "dropout": 0.1, "lr": 0.0001},
 ]
-config = configs[-1]
+config = configs[-3]
 
 def plot_image(sample_image, sample_danger, grid_lines, grid=False):
     colors = [(0, "green"), (0.5, "orange"), (1, "red")]
@@ -60,8 +66,10 @@ def plot_image(sample_image, sample_danger, grid_lines, grid=False):
 
     plt.xlim(0, width)
     plt.ylim(height, 0)
-
-model = ObjectDetectionModel.load_from_checkpoint("checkpoints/FastStrideMoreChannelsfold0-epoch=98-val_loss=0.0977.ckpt",
+# checkpoints/FastStrideMoreChannelsfold4_synthethic-epoch=57-val_loss=0.0946.ckpt good small
+# checkpoints/FastStrideMoreChannelsfold4_synthethic-epoch=38-val_loss=0.0979.ckpt good middle
+# checkpoints/FastStrideBigKernelfold3_synthethic-epoch=52-val_loss=0.0690.ckpt good big
+model = ObjectDetectionModel.load_from_checkpoint("./checkpoints/FastStrideMoreChannelsfold4_synthethic-epoch=57-val_loss=0.0946.ckpt",
                                                   grid_lines=config["grid_lines"], channels=config["channels"],
                                                   kernel_size=config["kernel_size"], padding=config["padding"],
                                                   stride=config["stride"], pool_size=config["pool_size"],
@@ -70,7 +78,7 @@ model = ObjectDetectionModel.load_from_checkpoint("checkpoints/FastStrideMoreCha
 # save the model to onnx
 
 
-model.to_onnx("./SmallConvNetwork/model_small_clip.onnx", torch.randn(1, 3, height, height))
+#model.to_onnx("./SmallConvNetwork/model_small_new.onnx", torch.randn(1, 3, height, height))
 
 # plot a video to test the predictions
 model.to("cpu")
@@ -85,23 +93,25 @@ fig, ax = plt.subplots()
 
 def update(frame):
     ax.clear()  # clear the axes for the new frame
-    image = torchvision.io.read_image(image_paths[frame]).float()
+    image_plot = torchvision.io.read_image(image_paths[frame]).float()
 
-    image_model = torch.tensor(read_jpg_to_yuv(image_paths[frame]))
+    with open(image_paths[frame].replace(".jpg", ".raw").replace("video", "video_raw"), 'rb') as f:
+        image_model = np.frombuffer(f.read(), dtype=np.float32).reshape((3, 240, 240))
+        image_model = torch.tensor(image_model).unsqueeze(0)
 
     # Record frame processing time
     # start_frame = time.time()
-    frame_danger = model(image_model.unsqueeze(0)).squeeze(0)
+    frame_danger = model(image_model).squeeze(0)
     # print(f"{(time.time() - start_frame)*1000:.3f} ms")
 
     # Call the plot_image function to update the plot
-    plot_image(sample_image=image, sample_danger=frame_danger, grid_lines=columns, grid=False)
+    plot_image(sample_image=image_plot, sample_danger=frame_danger, grid_lines=columns, grid=False)
     ax.set_xlim(0, width)
     ax.set_ylim(height, 0)
     return ax
 
 # Make the animation
-animation_fps = 100
+animation_fps = 10
 ani = animation.FuncAnimation(fig, update, frames=len(image_paths), interval=1000/animation_fps)
 
 # if save_video:
