@@ -1,6 +1,5 @@
 import numpy as np
 import cv2
-import matplotlib.pyplot as plt
 import time
 from pathlib import Path
 import glob
@@ -189,12 +188,7 @@ def process_directory(jpg_dir, output_dir):
 
 if __name__ == "__main__":
     start = time.time()
-    # image_path = "SmallConvNetwork/dataset/images/val/177250905.jpg"
-    # yuv = read_jpg_to_yuv(image_path)
     process_directory("/home/twan/paparazzi/SmallConvNetwork/Test_video", "/home/twan/paparazzi/SmallConvNetwork/Test_video_raw")
     print(time.time()-start)
     with open(glob.glob("/home/twan/YOLO_dataset_generated/images_raw/*.raw")[0], 'rb') as f:
          yuv = np.frombuffer(f.read(), dtype=np.float32).reshape((3,240, 240))
-
-    plt.imshow(yuv[0,:,:], cmap='gray')
-    plt.show()

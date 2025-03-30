@@ -7,8 +7,53 @@ from CNN import ObjectDetectionModel
 import glob
 import numpy as np
 
+
+def plot_image(sample_image, sample_danger, grid_lines):
+    # initialize colormap
+    colors = [(0, "green"), (0.5, "orange"), (1, "red")]
+    cmap = LinearSegmentedColormap.from_list("traffic_light", colors)
+
+    sample_danger = sample_danger.detach().numpy()
+
+    # Rotate image to display it correctly. Divide by 255 to scale pixel values to [0, 1].
+    plt.imshow(torch.rot90(sample_image.squeeze(0), k=1, dims=[1, 2]).permute(1, 2, 0) / 255)
+
+    # Overlay predicted danger levels.
+    for i in range(len(grid_lines) - 1):
+        plt.fill_between([grid_lines[i] * width, grid_lines[i + 1] * width],
+                         [0, 0],
+                         [height, height],
+                         color=cmap(sample_danger[i]), alpha=0.5)
+        plt.text((grid_lines[i] * width + grid_lines[i + 1] * width) / 2, height / 2, f"{sample_danger[i]:.2f}",
+                 ha='center', va='center')
+
+    plt.xlim(0, width)
+    plt.ylim(height, 0)
+    return
+
+def update(frame):
+    ax.clear()  # clear the axes for the new frame
+    image_plot = torchvision.io.read_image(image_paths[frame]).float()
+
+    with open(image_paths[frame].replace(".jpg", ".raw").replace("video", "video_raw"), 'rb') as f:
+        image_model = np.frombuffer(f.read(), dtype=np.float32).reshape((3, 240, 240))
+        image_model = torch.tensor(image_model).unsqueeze(0)
+
+    # Record frame processing time
+    # start_frame = time.time()
+    frame_danger = model(image_model).squeeze(0)
+    # print(f"{(time.time() - start_frame)*1000:.3f} ms")
+
+    # Call the plot_image function to update the plot
+    plot_image(sample_image=image_plot, sample_danger=frame_danger, grid_lines=columns)
+    ax.set_xlim(0, width)
+    ax.set_ylim(height, 0)
+    return ax
+
+# This is the size of the image if it is displayed correctly
 width = 520
 height = 240
+
 # This defines how wide the columns are
 columns = [140/520, 220/520, 300/520, 380/520]
 
@@ -46,29 +91,7 @@ configs = [
 ]
 config = configs[-3]
 
-def plot_image(sample_image, sample_danger, grid_lines, grid=False):
-    colors = [(0, "green"), (0.5, "orange"), (1, "red")]
-    cmap = LinearSegmentedColormap.from_list("traffic_light", colors)
-
-    sample_danger = sample_danger.detach().numpy()
-
-    # Rotate image to display it correctly. Divide by 255 to scale pixel values to [0, 1].
-    plt.imshow(torch.rot90(sample_image.squeeze(0), k=1, dims=[1,2]).permute(1, 2, 0)/255)
-
-    # Overlay predicted danger levels.
-    for i in range(len(grid_lines) - 1):
-        plt.fill_between([grid_lines[i]*width, grid_lines[i + 1]*width],
-                         [0, 0],
-                         [height, height],
-                         color=cmap(sample_danger[i]), alpha=0.5)
-        plt.text((grid_lines[i]*width +grid_lines[i + 1]*width)/2 , height/2, f"{sample_danger[i]:.2f}", ha='center', va='center')
-
-
-    plt.xlim(0, width)
-    plt.ylim(height, 0)
-# checkpoints/FastStrideMoreChannelsfold4_synthethic-epoch=57-val_loss=0.0946.ckpt good small
-# checkpoints/FastStrideMoreChannelsfold4_synthethic-epoch=38-val_loss=0.0979.ckpt good middle
-# checkpoints/FastStrideBigKernelfold3_synthethic-epoch=52-val_loss=0.0690.ckpt good big
+# Load the trained model
 model = ObjectDetectionModel.load_from_checkpoint("./checkpoints/FastStrideMoreChannelsfold4_synthethic-epoch=57-val_loss=0.0946.ckpt",
                                                   grid_lines=config["grid_lines"], channels=config["channels"],
                                                   kernel_size=config["kernel_size"], padding=config["padding"],
@@ -76,46 +99,24 @@ model = ObjectDetectionModel.load_from_checkpoint("./checkpoints/FastStrideMoreC
                                                   hidden_units=config["hidden_units"], dropout=config["dropout"], lr=config["lr"])
 
 # save the model to onnx
-
-
-#model.to_onnx("./SmallConvNetwork/model_small_new.onnx", torch.randn(1, 3, height, height))
+model.to_onnx("./SmallConvNetwork/model_small_new.onnx", torch.randn(1, 3, height, height))
 
 # plot a video to test the predictions
 model.to("cpu")
 model.eval()
 torch.set_num_threads(1)
 
-# Use the images from this folder
+# Use the images from this folder to make a video
 test_images = './SmallConvNetwork/Test_video/*.jpg'
 image_paths = sorted(glob.glob(test_images))
 
 fig, ax = plt.subplots()
 
-def update(frame):
-    ax.clear()  # clear the axes for the new frame
-    image_plot = torchvision.io.read_image(image_paths[frame]).float()
-
-    with open(image_paths[frame].replace(".jpg", ".raw").replace("video", "video_raw"), 'rb') as f:
-        image_model = np.frombuffer(f.read(), dtype=np.float32).reshape((3, 240, 240))
-        image_model = torch.tensor(image_model).unsqueeze(0)
-
-    # Record frame processing time
-    # start_frame = time.time()
-    frame_danger = model(image_model).squeeze(0)
-    # print(f"{(time.time() - start_frame)*1000:.3f} ms")
-
-    # Call the plot_image function to update the plot
-    plot_image(sample_image=image_plot, sample_danger=frame_danger, grid_lines=columns, grid=False)
-    ax.set_xlim(0, width)
-    ax.set_ylim(height, 0)
-    return ax
-
 # Make the animation
 animation_fps = 10
 ani = animation.FuncAnimation(fig, update, frames=len(image_paths), interval=1000/animation_fps)
 
-# if save_video:
-#     # Save the animation to an MP4 file using ffmpeg writer
-#     ani.save('./SmallConvNetwork/output.mp4', writer='ffmpeg', fps=animation_fps)
+# Save the animation to an MP4 file using ffmpeg writer
+ani.save('./SmallConvNetwork/output.mp4', writer='ffmpeg', fps=animation_fps)
 
 plt.show()

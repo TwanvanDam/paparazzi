@@ -1,19 +1,14 @@
-import matplotlib.pyplot as plt
-
-from Danger_Calculation import generate_danger_level_list, read_bboxes
 import numpy as np
-from torch.utils.data import DataLoader, Subset
-from sklearn.model_selection import KFold
+import random
+import time
 import glob
 import torch
-from torch.utils.data import Dataset, DataLoader
 import pytorch_lightning as pl
-from pytorch_lightning.callbacks import ModelCheckpoint
-import time
-from pytorch_lightning.callbacks.early_stopping import EarlyStopping
-import random
-from Image_utils import adjust_brightness_contrast
+from torch.utils.data import Dataset, DataLoader, Subset
+from sklearn.model_selection import KFold
 
+from Image_utils import adjust_brightness_contrast
+from Danger_Calculation import generate_danger_level_list, read_bboxes
 class CustomImageDataset(Dataset):
     def __init__(self, image_dir, width, height, grid_lines):
         self.image_paths = sorted(glob.glob(image_dir + "/images_raw/*.raw"))
@@ -31,6 +26,7 @@ class CustomImageDataset(Dataset):
         bboxes = read_bboxes(self.label_paths[idx])
         cell_danger_levels = generate_danger_level_list(bboxes, self.grid_lines)
 
+        # adjust brightness and contrast
         if random.random() < 0.1:
             image = adjust_brightness_contrast(image, random.randint(-10, 10)/50, random.randint(-10, 10)/50)
 
@@ -50,8 +46,6 @@ class ObjectDetectionModel(pl.LightningModule):
         self.lr = lr
         self.verbose = True
         self.grid_lines = grid_lines
-        self.xlim_left = int(self.grid_lines[0] * width)
-        self.xlim_right = int(self.grid_lines[-1] * width)
 
         layers_conv = []
         for i in range(len(channels)):
@@ -120,21 +114,18 @@ if __name__ == "__main__":
     width = 520
     height = 240
 
-    # Option for running the file
-    train = True
-    save_model = False
-    save_video = False
-
-    # Parameters
+    # Training Parameters
     n_splits = 5
     batch_size = 8
     max_epochs = 100
     random_state = 42
-    num_tests = 100
+    num_tests = 100 # Number of tests to run for inference time
 
-    # This defines how wide the columns are
+    # This defines where the columns are located
+    # 3 columns in the middle 240 pixels of the image
     columns = [140/520, 220/520, 300/520, 380/520]
 
+    # Configs tried
     configs = [
         #  {"name" : "Baseline", "grid_lines": columns,"channels": [8, 16, 32],"kernel_size": [3, 3, 3],"padding": [1, 1, 1],
         #           "stride": [2, 2, 2], "pool_size": [2, 2, 2],"hidden_units": [128],"dropout": 0.2, "lr" : 0.0001},
@@ -155,6 +146,7 @@ if __name__ == "__main__":
 
         # {"name": "FastStride", "grid_lines": columns, "channels": [8, 16, 16], "kernel_size": [3, 3, 3], "padding": [1, 1, 1],
         #  "stride": [3, 2, 2], "pool_size": [2, 2, 2], "hidden_units": [64], "dropout": 0.1, "lr": 0.0001},
+        # Best model so far
         {"name": "FastStrideMoreChannels", "grid_lines": columns, "channels": [8, 16, 32], "kernel_size": [3, 3, 3], "padding": [1, 1, 1],
          "stride": [3, 2, 2], "pool_size": [2, 2, 2], "hidden_units": [128], "dropout": 0.1, "lr": 0.0001},
         # {"name": "FastStrideMoreMoreChannels", "grid_lines": columns, "channels": [8, 16, 64], "kernel_size": [3, 3, 3], "padding": [1, 1, 1],
@@ -177,12 +169,8 @@ if __name__ == "__main__":
         #  "hidden_units": [32], "dropout": 0.1, "lr": 0.0002},
     ]
 
-
+    # Load the dataset
     full_dataset = CustomImageDataset(training_dir, width, height, columns)
-    # for i in range(len(full_dataset)):
-    #     print(full_dataset[i][1])
-    #     plt.imshow(full_dataset[i][0][0,:,:], cmap='gray')
-    #     plt.show()
 
     # Initialize KFold configuration
     kfold = KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
@@ -190,7 +178,9 @@ if __name__ == "__main__":
     # Store results for each fold
     results = [{"name" : configs[i]["name"], "val_loss" : [], "epochs" : [], "inference" : []} for i in range(len(configs))]
 
+    # Loop through each configuration
     for i,config in enumerate(configs):
+        # Loop over all folds
         for fold, (train_idx, val_idx) in enumerate(kfold.split(np.arange(len(full_dataset)))):
             print(f"Training fold {fold + 1}/{n_splits}")
 
@@ -198,7 +188,7 @@ if __name__ == "__main__":
             train_subset = Subset(full_dataset, train_idx)
             val_subset = Subset(full_dataset, val_idx)
 
-            checkpoint_callback = ModelCheckpoint(
+            checkpoint_callback = pl.callbacks.ModelCheckpoint(
                 monitor='val_loss',         # metric to monitor
                 dirpath='checkpoints/',     # directory to save checkpoints
                 filename=f'{config["name"]}fold{fold}_synthethic'+ '-{epoch:02d}-{val_loss:.4f}',  # checkpoint filename format
@@ -207,7 +197,6 @@ if __name__ == "__main__":
             )
 
             # fit the model
-
             print(f"Training model {i}")
             print(f"Model configuration: {config}")
             model = ObjectDetectionModel(grid_lines=config["grid_lines"], channels=config["channels"],
@@ -219,7 +208,7 @@ if __name__ == "__main__":
                 max_epochs=max_epochs,
                 check_val_every_n_epoch=1,
                 enable_progress_bar=True,
-                callbacks=[checkpoint_callback, EarlyStopping(monitor="val_loss", mode="min", patience=5)],
+                callbacks=[checkpoint_callback, pl.callbacks.early_stopping.EarlyStopping(monitor="val_loss", mode="min", patience=5)],
             )
             # Run training for this fold
             trainer.fit(model, DataLoader(train_subset, batch_size=batch_size), DataLoader(val_subset, batch_size=batch_size))
@@ -232,6 +221,7 @@ if __name__ == "__main__":
             print("Testing inference time")
             start = time.time()
             model.eval()
+            # Use 1 cpu code to obtain a fair comparison between laptop and drone
             model.to("cpu")
             torch.set_num_threads(1)
             for n in range(num_tests):

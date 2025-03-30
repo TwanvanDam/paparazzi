@@ -1,4 +1,3 @@
-# TODO implement generation of synthetic data to aid SmallCNN model training
 import os
 import glob
 import shutil
@@ -6,7 +5,6 @@ import random
 import tqdm
 import cv2
 from ultralytics import YOLO
-
 
 def convert_to_yolo_format(x1, y1, x2, y2, img_width, img_height):
     """

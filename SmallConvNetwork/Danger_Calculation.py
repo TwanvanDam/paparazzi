@@ -1,13 +1,11 @@
-import glob
 import numpy as np
 import torchvision.io
 import matplotlib.pyplot as plt
-import torch
 from matplotlib.colors import LinearSegmentedColormap
 import matplotlib.patches as patches
 
 
-def read_bboxes(path):
+def read_bboxes(path:str)->np.ndarray:
     bboxes = open(path, "r").readlines()
     bboxes_processed = np.zeros((len(bboxes), 5))
 
@@ -19,10 +17,9 @@ def read_bboxes(path):
         h = float(bboxes_split[4])
         label = int(bboxes_split[0])
         bboxes_processed[i,:] = [x, y, w, h, label]
-
     return bboxes_processed
 
-def convert_coordinates(bbox):
+def convert_coordinates(bbox:np.ndarray)->tuple[float, float, float, float, int]:
     # Convert from x, y, w, h to x1, y1, x2, y2
     x1 = bbox[0] - bbox[2]/2
     y1 = bbox[1] - bbox[3]/2
@@ -31,11 +28,20 @@ def convert_coordinates(bbox):
     label = int(bbox[4])
     return x1, x2, y1, y2, label
 
-def danger_level(x1, x2, y1, y2, label, min_danger=0.0):
-    # 0 : Panel
-    # 1 : Plant
-    # 2 : Pole
-    # 3 : blocks
+def danger_level(x1:float, x2:float, y1:float, y2:float, label:int, min_danger=0.0)->float:
+    """
+    Calculate the danger level of a bounding box based on its coordinates and label.
+    :param x1: left x coordinate
+    :param x2: right x coordinate
+    :param y1: bottom y coordinate
+    :param y2: top y coordinate
+    :param label: type of object
+        0 : Panel
+        1 : Plant
+        2 : Pole
+        3 : blocks
+    :return: danger level (0.0 - 1.0)
+    """
 
     rel_height = y2 - y1
     rel_width = x2 - x1
@@ -61,8 +67,16 @@ def danger_level(x1, x2, y1, y2, label, min_danger=0.0):
 
     return max(min_danger, danger)
 
-def generate_danger_level_list(bboxes, grid_lines, augment_bboxes=True):
-    danger_list = [0 for _ in range(len(grid_lines)-1)]
+def generate_danger_level_list(bboxes:np.ndarray, columns:list[float], augment_bboxes=True)->list[float]:
+    """
+    Generate a list of danger levels for each column in the grid.
+    :param bboxes: objects in the image
+    :param columns: location of the grid lines
+    :param augment_bboxes: if True, augment the bboxes to make sure boxes only exist within the grid
+    :return: list of danger levels for each column
+    """
+
+    danger_list = [0 for _ in range(len(columns) - 1)]
 
     # loop over all bboxes
     for i in range(bboxes.shape[0]):
@@ -70,14 +84,14 @@ def generate_danger_level_list(bboxes, grid_lines, augment_bboxes=True):
         x1, x2, y1, y2, label = convert_coordinates(bbox)
         if augment_bboxes:
             # augment the bbox to make sure boxes only exist within the grid
-            x1 = max(grid_lines[0], x1)
-            x2 = min(grid_lines[-1], x2)
+            x1 = max(columns[0], x1)
+            x2 = min(columns[-1], x2)
 
         # calculate how dangerous given box is
         box_danger = danger_level(x1, x2, y1, y2, label)
-        for j in range(len(grid_lines)-1):
-            left = grid_lines[j]
-            right = grid_lines[j+1]
+        for j in range(len(columns) - 1):
+            left = columns[j]
+            right = columns[j + 1]
             # update the danger_list iff the box is in the given column and danger value is greater than current for that column
             if ((left <= x1 <= right) or (left <= x2 <= right)) or (x1 <= left and x2 >= right):
                 danger_list[j] = max(danger_list[j], box_danger)
@@ -87,9 +101,10 @@ def generate_danger_level_list(bboxes, grid_lines, augment_bboxes=True):
 if __name__ == "__main__":
     # Test the danger_level function
     test_images_dir = "./SmallConvNetwork/SyntheticData/dataset/images/train/122215661.jpg"
-    print(f"plotting image: {test_images_dir}")
+
     colors = [(0, "green"), (0.5, "orange"), (1.0, "red")]
     cmap = LinearSegmentedColormap.from_list("traffic_light", colors)
+
     grid_lines = [0, 0.2, 0.4, 0.6, 0.8, 1.0]
     width = 520
     height = 240

@@ -40,7 +40,7 @@ class CustomImageDataset(Dataset):
             raise ValueError(f"Image shape {image.shape} of {self.image_paths[idx]} is not equal to the expected shape ({self.width}, {self.height})")
         bboxes = self.get_bboxes(self.label_paths[idx])
         cell_danger_levels = torch.tensor(
-            generate_danger_level_list(bboxes, self.grid_lines, self.width, self.height)).float()
+            generate_danger_level_list(bboxes, self.grid_lines, self.width)).float()
         return image, cell_danger_levels, bboxes
 
 

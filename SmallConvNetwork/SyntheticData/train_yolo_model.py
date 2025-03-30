@@ -3,10 +3,10 @@ from ultralytics import YOLO
 import torchvision
 
 # Load a smaller model
-# model = YOLO("yolo11s.pt")  # or "yolov11-n.pt"
-#
-# # Train on your dataset
-# model.train(data="./data.yaml", epochs=100, batch=4, imgsz=520)
+model = YOLO("yolo11s.pt")
+
+# Train on your dataset
+model.train(data="./data.yaml", epochs=100, batch=4, imgsz=520)
 
 # Evaluate the model
 model = YOLO("yolov11s_finetuned.pt")
@@ -15,7 +15,6 @@ model = model.eval()
 # Loop through and show all images in the validation dataset
 test_image =  "./dataset/images/train/122215661.jpg"
 results = model(test_image)
-#results[0].show()
 
 label_to_name = {0.0: "Panel", 1.0: "Plant", 2.0: "Pole", 3.0: "Blocks"}
 
@@ -35,4 +34,4 @@ plt.savefig("YOLO_prediction.pdf", dpi=300, bbox_inches='tight')
 plt.show()
 
 # Save the model
-# model.save("./yolov11s_finetuned.pt")
+model.save("./yolov11s_finetuned.pt")
